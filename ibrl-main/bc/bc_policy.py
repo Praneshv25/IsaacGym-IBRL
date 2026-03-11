@@ -1,10 +1,11 @@
 from dataclasses import dataclass, field
+
 import torch
 import torch.nn as nn
 
 import common_utils
-from common_utils import ibrl_utils as utils
 from bc.multiview_encoder import MultiViewEncoder, MultiViewEncoderConfig
+from common_utils import ibrl_utils as utils
 
 
 def build_fc(in_dim, hidden_dim, action_dim, num_layer, layer_norm, dropout):
@@ -29,7 +30,9 @@ def build_fc(in_dim, hidden_dim, action_dim, num_layer, layer_norm, dropout):
 
 @dataclass
 class BcPolicyConfig:
-    encoder: MultiViewEncoderConfig = field(default_factory=lambda: MultiViewEncoderConfig())
+    encoder: MultiViewEncoderConfig = field(
+        default_factory=lambda: MultiViewEncoderConfig()
+    )
     use_prop: int = 0
     prop_noise: float = 0
     hidden_dim: int = 1024
@@ -39,7 +42,9 @@ class BcPolicyConfig:
 
 
 class BcPolicy(nn.Module):
-    def __init__(self, obs_shape, prop_shape, action_dim, rl_cameras, cfg: BcPolicyConfig):
+    def __init__(
+        self, obs_shape, prop_shape, action_dim, rl_cameras, cfg: BcPolicyConfig
+    ):
         super().__init__()
         self.rl_cameras = rl_cameras
         self.cfg = cfg
@@ -139,7 +144,7 @@ class StateBcPolicy(nn.Module):
         mu = self.net(obs["state"])
         return mu
 
-    def act(self, obs: dict[str, torch.Tensor], *, eval_mode=True, cpu=True):
+    def act(self, obs: dict[str, torch.Tensor], *, eval_mode=True, cpu=True, **kwargs):
         assert eval_mode
         assert not self.training
         state = obs["state"]

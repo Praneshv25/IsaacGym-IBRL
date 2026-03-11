@@ -36,7 +36,7 @@ import copy
 import os
 import sys
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Tuple
 
 import numpy as np
 import pyrallis
@@ -44,6 +44,8 @@ import torch
 import yaml
 
 import common_utils
+from bc.bc_policy import StateBcPolicy
+from bc.isaac_dataset import IsaacDatasetConfig, IsaacPklDataset
 from common_utils import ibrl_utils as utils
 from env.isaac_gym_wrapper import ACTION_DIM, STATE_DIM, IsaacGymBulbEnv
 from evaluate.eval_isaac import run_eval_isaac
@@ -102,12 +104,21 @@ class MainConfig(common_utils.RunConfig):
 
     # ── warm-up ──────────────────────────────────────────────────────────────
     # Number of env steps (each = num_envs transitions) with random actions
-    # before training begins.
+    # (or BC-policy actions when a BC policy is loaded) before training begins.
     num_warm_up_steps: int = 200
 
     # ── demo preloading (optional) ───────────────────────────────────────────
     # Path to a MarsLab .pkl transition file.  Leave empty to skip.
     preload_pkl: str = ""
+
+    # ── BC policy / IBRL (optional) ──────────────────────────────────────────
+    # Path to a StateBcPolicy checkpoint trained by train_bc_isaac.py.
+    # When set:
+    #   • warm-up uses the BC policy instead of random actions.
+    #   • The BC policy is registered with the QAgent so IBRL action
+    #     selection can be enabled via q_agent.act_method = "ibrl".
+    # Leave empty ("") to run pure RL without a BC policy.
+    bc_policy: str = ""
 
     # ── evaluation ───────────────────────────────────────────────────────────
     num_eval_episodes: int = 50
@@ -122,9 +133,47 @@ class MainConfig(common_utils.RunConfig):
         # Clamp stddev so min ≤ max
         self.stddev_min = min(self.stddev_max, self.stddev_min)
 
+        if self.bc_policy in ("none", "None", ""):
+            self.bc_policy = ""
+
     @property
     def stddev_schedule(self) -> str:
         return f"linear({self.stddev_max},{self.stddev_min},{self.stddev_step})"
+
+
+# ---------------------------------------------------------------------------
+# BC policy loading helper
+# ---------------------------------------------------------------------------
+
+
+def _load_bc_policy(
+    weight_file: str, device: str
+) -> Tuple[StateBcPolicy, Optional[torch.Tensor]]:
+    """Load a ``StateBcPolicy`` checkpoint saved by ``train_bc_isaac.py``.
+
+    Reads the ``cfg.yaml`` next to the checkpoint to reconstruct the
+    network architecture, then loads the weights.  Also loads the
+    companion ``action_scale.pt`` file (if present) that stores the
+    per-dim normalisation scale used during BC training.
+
+    Parameters
+    ----------
+    weight_file : str
+        Path to the ``.pt`` checkpoint (e.g. ``model_best.pt``).
+    device : str
+        PyTorch device string, e.g. ``"cuda:0"``.
+
+    Returns
+    -------
+    policy : StateBcPolicy in *eval* mode on *device*.
+    action_scale : Tensor of shape ``(action_dim,)`` or ``None``
+        Per-dim normalisation scale, or ``None`` when the companion file
+        is absent (legacy checkpoints without normalisation).
+    """
+    # Import here to avoid circular imports at module load time
+    from train_bc_isaac import load_bc_policy as _load
+
+    return _load(weight_file, device)
 
 
 # ---------------------------------------------------------------------------
@@ -160,10 +209,24 @@ class Workspace:
         # ── environment ───────────────────────────────────────────────────
         self._setup_env()
 
+        # ── BC policy (optional) ──────────────────────────────────────────
+        # Loaded before the QAgent so we can pass it in immediately.
+        self.bc_policy: Optional[StateBcPolicy] = None
+        self._bc_action_scale: Optional[torch.Tensor] = None
+        if cfg.bc_policy:
+            print(common_utils.wrap_ruler("loading BC policy"))
+            self.bc_policy, self._bc_action_scale = _load_bc_policy(
+                cfg.bc_policy, cfg.rl_device
+            )
+            print(f"  BC policy loaded from: {cfg.bc_policy}")
+            if self._bc_action_scale is not None:
+                print(
+                    f"  BC action_scale: "
+                    f"{[f'{v:.4f}' for v in self._bc_action_scale.tolist()]}"
+                )
+
         # ── agent ─────────────────────────────────────────────────────────
         # Force state-based mode: FcActor + MultiFcQ, no image encoder.
-        # QAgentConfig.act_method defaults to "rl"; we leave it as-is
-        # (no BC policy available for this prototype).
         print(common_utils.wrap_ruler("building QAgent (use_state=True)"))
         self.agent = QAgent(
             use_state=1,
@@ -173,6 +236,16 @@ class Workspace:
             rl_camera="",  # unused when use_state=True
             cfg=cfg.q_agent,
         )
+
+        # Register BC policy with the agent so IBRL action selection works.
+        # QAgent.add_bc_policy() also calls bc_policy.train(False).
+        if self.bc_policy is not None:
+            self.agent.add_bc_policy(copy.deepcopy(self.bc_policy))
+            print(
+                f"  BC policy registered with QAgent "
+                f"(act_method={cfg.q_agent.act_method})"
+            )
+
         # Reference agent: always acts with pure RL (used in actor updates)
         self.ref_agent = copy.deepcopy(self.agent)
         self.ref_agent.cfg.act_method = "rl"
@@ -212,11 +285,29 @@ class Workspace:
             replay_size=cfg.replay_buffer_size,
         )
 
+        # BC dataset for RFT actor loss (separate from replay; always CPU).
+        # Created whenever demos are preloaded so the actor can be
+        # regularised toward demo behaviour even when IBRL is enabled.
+        self.bc_dataset: Optional[IsaacPklDataset] = None
+
         if cfg.preload_pkl:
+            # Build the BC dataset first so we can share its action_scale
+            # with add_demos_from_pkl (consistent normalisation).
+            print(common_utils.wrap_ruler("building BC dataset from preload_pkl"))
+            _bc_ds = IsaacPklDataset(
+                IsaacDatasetConfig(
+                    path=cfg.preload_pkl,
+                    normalize_actions=True,
+                )
+            )
+            self.bc_dataset = _bc_ds
+            # Propagate shared scale to the replay loader so demo actions
+            # stored in rela.Episode are normalised the same way.
             add_demos_from_pkl(
                 self.replay,
                 cfg.preload_pkl,
                 verbose=True,
+                action_scale=_bc_ds.action_scale,
             )
             print(
                 f"After demo preload: replay size = {self.replay.size()} episodes, "
@@ -228,23 +319,35 @@ class Workspace:
     # ──────────────────────────────────────────────────────────────────────
 
     def warm_up(self) -> None:
-        """Fill the replay buffer with *num_warm_up_steps* env steps of
-        uniformly random actions before training begins.
+        """Fill the replay buffer with *num_warm_up_steps* env steps before
+        training begins.
+
+        If a BC policy is available, it is used to generate warm-up
+        actions (giving the replay better initial coverage).  Otherwise
+        uniformly random actions in ``[-1, 1]`` are used.
 
         Each env step produces ``num_envs`` transitions, so the warm-up
         adds ``num_warm_up_steps * num_envs`` transitions in total.
         """
-        print(common_utils.wrap_ruler("warm-up (random actions)"))
         cfg = self.cfg
+        use_bc = self.bc_policy is not None
+        label = "BC policy" if use_bc else "random actions"
+        print(common_utils.wrap_ruler(f"warm-up ({label})"))
 
         obs = self.train_env.reset()
         self.replay.new_episodes(obs)
 
-        for step in range(cfg.num_warm_up_steps):
-            # Sample uniformly random actions in [-1, 1]
-            actions = torch.zeros(
-                cfg.num_envs, cfg.action_dim, device=cfg.rl_device
-            ).uniform_(-1.0, 1.0)
+        for _ in range(cfg.num_warm_up_steps):
+            if use_bc:
+                # Run BC policy in eval mode (no exploration noise)
+                _bc_pol = self.bc_policy
+                assert _bc_pol is not None
+                with torch.no_grad(), utils.eval_mode(_bc_pol):
+                    actions = _bc_pol.act(obs, eval_mode=True, cpu=False)
+            else:
+                actions = torch.zeros(
+                    cfg.num_envs, cfg.action_dim, device=cfg.rl_device
+                ).uniform_(-1.0, 1.0)
 
             obs, rewards, dones, successes = self.train_env.step(actions)
             self.replay.add_step(obs, actions, rewards, dones, successes)
@@ -284,16 +387,37 @@ class Workspace:
     # ──────────────────────────────────────────────────────────────────────
 
     def _rl_train(self, stat: common_utils.MultiCounter) -> None:
-        """Perform one round of critic (and optionally actor) updates."""
+        """Perform one round of critic (and optionally actor) updates.
+
+        When a demo dataset is available (``preload_pkl`` was set) **and**
+        the QAgent config has ``bc_loss_coef > 0``, a BC mini-batch is
+        sampled alongside the RL batch and used by ``update_actor_rft``
+        to add a behavioural-cloning regularisation term to the actor loss.
+        This is the IBRL "RFT" (reward-from-trajectory) update.
+        """
         stddev = utils.schedule(self.cfg.stddev_schedule, self.global_step)
         for i in range(self.cfg.num_critic_update):
             batch = self.replay.sample(self.cfg.batch_size, self.cfg.rl_device)
             update_actor = i == self.cfg.num_critic_update - 1
+
+            # Sample a BC batch when a demo dataset is available and the
+            # actor update step is reached.  Pass None otherwise so
+            # update_actor (plain SAC-style) is used instead of update_actor_rft.
+            bc_batch = None
+            if (
+                update_actor
+                and self.bc_dataset is not None
+                and self.cfg.q_agent.bc_loss_coef > 0.0
+            ):
+                bc_batch = self.bc_dataset.sample_bc(
+                    self.cfg.batch_size, self.cfg.rl_device
+                )
+
             metrics = self.agent.update(
                 batch,
                 stddev,
                 update_actor,
-                bc_batch=None,  # no BC policy in state-only prototype
+                bc_batch=bc_batch,
                 ref_agent=self.ref_agent,
             )
             stat.append(metrics)

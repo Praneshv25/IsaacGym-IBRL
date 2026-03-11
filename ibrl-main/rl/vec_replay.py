@@ -291,6 +291,7 @@ def add_demos_from_pkl(
     pkl_path: str,
     max_episodes: int = -1,
     verbose: bool = True,
+    action_scale: Optional[torch.Tensor] = None,
 ) -> None:
     """Load offline demonstration data from a MarsLab ``.pkl`` file into
     the replay buffer.
@@ -318,6 +319,15 @@ def add_demos_from_pkl(
         Maximum number of episodes to load.  ``-1`` means load all.
     verbose :
         If ``True``, print loading progress.
+    action_scale : Tensor of shape ``(action_dim,)`` or ``None``
+        Per-dimension scale used to normalise demo actions into the
+        ``[-1, 1]`` range expected by the live env and RL actor.
+        When ``None`` (default) the scale is computed automatically as
+        the per-dim maximum absolute value across all demo actions
+        (clamped to ≥ 1.0, so dims already in ``[-1, 1]`` are unchanged).
+        Pass the ``action_scale`` attribute of an ``IsaacPklDataset``
+        to share the same normalisation between the BC dataset and the
+        replay buffer.
     """
     if verbose:
         print(f"Loading demos from {pkl_path}")
@@ -342,6 +352,32 @@ def add_demos_from_pkl(
 
     loaded = 0
     skipped = 0
+
+    # ── Compute per-dim action scale if not explicitly provided ──────────
+    # This brings demo actions into [-1, 1] so they match the live RL
+    # actor's output range.  The env applies pos_action_scale / rot_action_scale
+    # internally, so both demo and live actions should arrive un-scaled.
+    if action_scale is None:
+        _raw_actions = []
+        for _ep_id in episode_ids:
+            for tr in episodes_raw[_ep_id]:
+                a = np.asarray(tr["action"], dtype=np.float32).squeeze()
+                _raw_actions.append(a)
+        if _raw_actions:
+            _stacked = np.stack(_raw_actions, axis=0)  # (N, action_dim)
+            _abs_max = np.abs(_stacked).max(axis=0)  # (action_dim,)
+            action_scale = torch.from_numpy(
+                np.maximum(_abs_max, 1.0).astype(np.float32)
+            )
+        else:
+            action_scale = torch.ones(7, dtype=torch.float32)  # fallback
+
+    assert action_scale is not None  # always set by the block above
+    if verbose:
+        print(
+            f"  action_scale (demo normalisation): "
+            f"{[f'{v:.4f}' for v in action_scale.tolist()]}"
+        )
 
     for ep_id in episode_ids:
         transitions = episodes_raw[ep_id]
@@ -394,6 +430,9 @@ def add_demos_from_pkl(
             action_t = torch.from_numpy(action_arr)
             if action_t.dim() == 0:
                 action_t = action_t.unsqueeze(0)
+            # Normalise to [-1, 1] so demo actions match the live RL actor's
+            # output range (the env applies pos/rot scales internally).
+            action_t = (action_t / action_scale).clamp(-1.0, 1.0)
 
             reward = float(np.asarray(tr["reward"]).squeeze())
 
