@@ -26,9 +26,16 @@ via ``--bc_policy <path>`` to enable the IBRL action-selection mechanism.
 
 Public API
 ----------
-::
+``path`` may point to a **single .pkl file** or a **directory**.  When a
+directory is given, every ``*.pkl`` file inside it (non-recursive) is
+loaded and their transitions are merged into one flat dataset::
 
+    # single file
     cfg     = IsaacDatasetConfig(path="demos.pkl")
+
+    # whole folder
+    cfg     = IsaacDatasetConfig(path="path/to/pkl_folder")
+
     dataset = IsaacPklDataset(cfg)
 
     batch = dataset.sample_bc(256, "cuda")
@@ -38,12 +45,14 @@ Public API
     # properties
     dataset.obs_shape     # (14,)
     dataset.action_dim    # 7
-    dataset.num_steps     # total transitions
-    dataset.num_episodes  # number of distinct episodes
+    dataset.num_steps     # total transitions across all files
+    dataset.num_episodes  # total episodes across all files
 """
 
 from __future__ import annotations
 
+import glob
+import os
 import pickle
 from collections import defaultdict, namedtuple
 from dataclasses import dataclass
@@ -93,9 +102,12 @@ class IsaacDatasetConfig:
     Attributes
     ----------
     path:
-        Absolute or relative path to the ``.pkl`` file.
+        Path to either a single ``.pkl`` file **or a directory**.
+        When a directory is given, every ``*.pkl`` file inside it
+        (non-recursive, sorted alphabetically) is loaded and merged.
     max_episodes:
-        Maximum number of episodes to load.  ``-1`` loads all.
+        Maximum number of episodes to load in total across all files.
+        ``-1`` loads all.
     max_len:
         Truncate episodes longer than this many steps.  ``-1`` means no
         truncation.
@@ -126,9 +138,9 @@ class IsaacDatasetConfig:
 
 
 class IsaacPklDataset:
-    """Flat transition dataset loaded from a MarsLab ``.pkl`` file.
+    """Flat transition dataset loaded from one or more MarsLab ``.pkl`` files.
 
-    The ``.pkl`` file contains a ``List[dict]`` where each dict is one
+    Each ``.pkl`` file contains a ``List[dict]`` where each dict is one
     SARS transition::
 
         {
@@ -142,6 +154,10 @@ class IsaacPklDataset:
             'success':    ndarray(1,),
             'timeout':    ndarray(1,),
         }
+
+    ``cfg.path`` may be a single ``.pkl`` file or a directory; in the
+    latter case every ``*.pkl`` inside the directory is loaded and merged.
+    Episode IDs are re-keyed per file to avoid collisions across files.
 
     All transitions are stored in a flat ``_entries`` list; episode
     boundaries are only used for statistics and optional filtering.
@@ -165,18 +181,71 @@ class IsaacPklDataset:
     # without branching.
     action_scale: torch.Tensor
 
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _resolve_pkl_files(path: str) -> List[str]:
+        """Return a sorted list of .pkl paths from a file or directory."""
+        if os.path.isdir(path):
+            files = sorted(glob.glob(os.path.join(path, "*.pkl")))
+            if not files:
+                raise ValueError(f"No .pkl files found in directory: {path}")
+            return files
+        else:
+            if not os.path.isfile(path):
+                raise ValueError(f"Path does not exist: {path}")
+            return [path]
+
+    @staticmethod
+    def _load_raw_transitions(pkl_files: List[str]) -> List[dict]:
+        """Load and merge raw transitions from one or more pkl files.
+
+        Episode IDs are offset per file so they remain unique across
+        the merged list even when individual files reuse the same IDs.
+        """
+        merged: List[dict] = []
+        ep_id_offset = 0
+        for fpath in pkl_files:
+            with open(fpath, "rb") as f:
+                raw: List[dict] = pickle.load(f)
+            # Find the max episode_id in this file so the next file's IDs
+            # start above it.
+            if raw:
+                max_id_in_file = max(t["episode_id"] for t in raw)
+                for t in raw:
+                    # Shallow copy so we don't mutate the original dict.
+                    t2 = dict(t)
+                    t2["episode_id"] = t["episode_id"] + ep_id_offset
+                    merged.append(t2)
+                ep_id_offset += max_id_in_file + 1
+        return merged
+
+    # ------------------------------------------------------------------
+    # Constructor
+    # ------------------------------------------------------------------
+
     def __init__(self, cfg: IsaacDatasetConfig) -> None:
         self.cfg = cfg
 
         if not cfg.path:
-            raise ValueError("IsaacDatasetConfig.path must be set to a .pkl file.")
+            raise ValueError("IsaacDatasetConfig.path must be set.")
 
-        print(f"[IsaacPklDataset] loading from: {cfg.path}")
+        pkl_files = self._resolve_pkl_files(cfg.path)
+        if len(pkl_files) == 1:
+            print(f"[IsaacPklDataset] loading from: {pkl_files[0]}")
+        else:
+            print(
+                f"[IsaacPklDataset] loading {len(pkl_files)} pkl files "
+                f"from directory: {cfg.path}"
+            )
+            for f in pkl_files:
+                print(f"  {os.path.basename(f)}")
 
-        with open(cfg.path, "rb") as f:
-            raw: List[dict] = pickle.load(f)
+        raw = self._load_raw_transitions(pkl_files)
 
-        # ── group by episode_id, sort each episode by timestep ────────────
+        # ── group by (remapped) episode_id, sort each episode by timestep ─
         eps_raw: Dict[int, List[dict]] = defaultdict(list)
         for t in raw:
             eps_raw[t["episode_id"]].append(t)

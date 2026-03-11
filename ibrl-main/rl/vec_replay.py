@@ -37,6 +37,8 @@ from live interaction.
 
 from __future__ import annotations
 
+import glob
+import os
 import pickle
 from collections import defaultdict
 from typing import Dict, List, Optional
@@ -286,6 +288,40 @@ class VecReplayBuffer:
 # ---------------------------------------------------------------------------
 
 
+def _resolve_pkl_files(path: str) -> List[str]:
+    """Return a sorted list of .pkl paths from a single file or directory."""
+    if os.path.isdir(path):
+        files = sorted(glob.glob(os.path.join(path, "*.pkl")))
+        if not files:
+            raise ValueError(f"No .pkl files found in directory: {path}")
+        return files
+    else:
+        if not os.path.isfile(path):
+            raise ValueError(f"Path does not exist: {path}")
+        return [path]
+
+
+def _load_and_merge_transitions(pkl_files: List[str]) -> List[dict]:
+    """Load and merge raw transitions from one or more pkl files.
+
+    Episode IDs are offset per file so they remain unique across the
+    merged list even when individual files reuse the same IDs.
+    """
+    merged: List[dict] = []
+    ep_id_offset = 0
+    for fpath in pkl_files:
+        with open(fpath, "rb") as f:
+            raw: List[dict] = pickle.load(f)
+        if raw:
+            max_id_in_file = max(t["episode_id"] for t in raw)
+            for t in raw:
+                t2 = dict(t)
+                t2["episode_id"] = t["episode_id"] + ep_id_offset
+                merged.append(t2)
+            ep_id_offset += max_id_in_file + 1
+    return merged
+
+
 def add_demos_from_pkl(
     replay: VecReplayBuffer,
     pkl_path: str,
@@ -293,8 +329,12 @@ def add_demos_from_pkl(
     verbose: bool = True,
     action_scale: Optional[torch.Tensor] = None,
 ) -> None:
-    """Load offline demonstration data from a MarsLab ``.pkl`` file into
+    """Load offline demonstration data from MarsLab ``.pkl`` file(s) into
     the replay buffer.
+
+    ``pkl_path`` may point to a **single .pkl file** or a **directory**.
+    When a directory is given, every ``*.pkl`` inside it is loaded and
+    merged (episode IDs are re-keyed to avoid collisions across files).
 
     The ``.pkl`` format stores a flat list of individual SARS transitions.
     This function reconstructs episode structure from the ``episode_id`` and
@@ -314,9 +354,10 @@ def add_demos_from_pkl(
         The ``VecReplayBuffer`` whose shared replay storage receives the
         demo data.
     pkl_path :
-        Absolute or relative path to the ``.pkl`` file.
+        Path to a single ``.pkl`` file **or a directory** containing
+        multiple ``.pkl`` files.
     max_episodes :
-        Maximum number of episodes to load.  ``-1`` means load all.
+        Maximum number of episodes to load in total.  ``-1`` means load all.
     verbose :
         If ``True``, print loading progress.
     action_scale : Tensor of shape ``(action_dim,)`` or ``None``
@@ -329,11 +370,20 @@ def add_demos_from_pkl(
         to share the same normalisation between the BC dataset and the
         replay buffer.
     """
-    if verbose:
-        print(f"Loading demos from {pkl_path}")
+    pkl_files = _resolve_pkl_files(pkl_path)
 
-    with open(pkl_path, "rb") as f:
-        data: list = pickle.load(f)
+    if verbose:
+        if len(pkl_files) == 1:
+            print(f"Loading demos from {pkl_files[0]}")
+        else:
+            print(
+                f"Loading demos from {len(pkl_files)} pkl files "
+                f"in directory: {pkl_path}"
+            )
+            for f in pkl_files:
+                print(f"  {os.path.basename(f)}")
+
+    data = _load_and_merge_transitions(pkl_files)
 
     # ── Group transitions by episode_id, sort by timestep ────────────────
     episodes_raw: Dict[int, list] = defaultdict(list)
