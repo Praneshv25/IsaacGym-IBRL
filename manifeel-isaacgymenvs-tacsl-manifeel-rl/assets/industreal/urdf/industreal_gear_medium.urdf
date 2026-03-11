@@ -1,0 +1,19 @@
+<?xml version="1.0"?>
+<robot name="industreal_gear_medium">
+    <link name="industreal_gear_medium">
+        <visual>
+            <geometry>
+                <mesh filename="../mesh/TVB_mesh/manifeel_gear_medium.obj" scale="1.0 1.0 1.0"/>
+            </geometry>
+            <material name="gear_metal">
+                <color rgba="0.69 0.69 0.69 1.0"/>
+            </material>
+        </visual>
+        <collision>
+            <geometry>
+                <mesh filename="../mesh/TVB_mesh/manifeel_gear_medium.obj" scale="1.0 1.0 1.0"/>
+            </geometry>
+            <sdf resolution="32"/>
+        </collision>
+    </link>
+</robot>
