@@ -30,7 +30,7 @@ or with pyrallis config file::
     python train_rl_isaac.py --config_path my_cfg.yaml
 """
 
-from __future__ import annotations
+# from __future__ import annotations
 
 import copy
 import os

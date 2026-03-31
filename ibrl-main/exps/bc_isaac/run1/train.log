@@ -1,0 +1,1622 @@
+=================config=================
+batch_size: 256
+dataset:
+  max_episodes: -1
+  max_len: -1
+  normalize_actions: true
+  path: /home/pvelmuru/projects/smaller_demo
+  use_default_socket_pad: true
+epoch_len: 1000
+eval_with_env: 0
+grad_clip: 5.0
+graphics_device_id: -1
+headless: true
+isaacgym_envs_path: ../manifeel-isaacgymenvs-tacsl-manifeel-rl
+lr: 0.0001
+num_epoch: 100
+num_eval_envs: 16
+num_eval_episodes: 20
+policy:
+  dropout: 0.5
+  hidden_dim: 256
+  layer_norm: 0
+  num_layer: 3
+rl_device: cuda:0
+save_dir: exps/bc_isaac/run1
+save_per: -1
+seed: 1
+sim_device: cuda:0
+use_wb: 0
+weight_decay: 0.0
+========================================
+================dataset=================
+[IsaacPklDataset] loading from: /home/pvelmuru/projects/smaller_demo/2026-02-10-13-50-16_transitions.pkl
+  Episodes loaded    : 1
+  Total transitions  : 1031
+  Success transitions: 0
+  Success episodes   : 0 / 1
+  Episode length     : min=1031, max=1031, mean=1031.0
+  obs_shape          : (14,)
+  action_dim         : 7
+  action normalisation : ENABLED
+  action_scale         : ['1.2257', '1.0000', '1.1957', '1.0000', '1.0000', '8.2500', '1.0000']
+  action dim 0        : [-0.9371, 1.0000]
+  action dim 1        : [-0.5357, 0.7457]
+  action dim 2        : [-1.0000, 0.2760]
+  action dim 3        : [0.0000, 0.0000]
+  action dim 4        : [0.0000, 0.0000]
+  action dim 5        : [-1.0000, 0.9114]
+  action dim 6        : [0.0000, 0.0350]
+=================policy=================
+StateBcPolicy(
+  (net): Sequential(
+    (0): Linear(in_features=14, out_features=256, bias=True)
+    (1): Dropout(p=0.5, inplace=False)
+    (2): ReLU()
+    (3): Linear(in_features=256, out_features=256, bias=True)
+    (4): Dropout(p=0.5, inplace=False)
+    (5): ReLU()
+    (6): Linear(in_features=256, out_features=256, bias=True)
+    (7): Dropout(p=0.5, inplace=False)
+    (8): ReLU()
+    (9): Linear(in_features=256, out_features=7, bias=True)
+    (10): Tanh()
+  )
+)
+| Module       |   #Params |      % |
+|--------------+-----------+--------|
+| net.0.weight |     3,584 |   2.61 |
+| net.0.bias   |       256 |   0.19 |
+| net.3.weight |    65,536 |  47.76 |
+| net.3.bias   |       256 |   0.19 |
+| net.6.weight |    65,536 |  47.76 |
+| net.6.bias   |       256 |   0.19 |
+| net.9.weight |     1,792 |   1.31 |
+| net.9.bias   |         7 |   0.01 |
+| Total        |   137,223 | 100.00 |
+================training================
+Saved model to exps/bc_isaac/run1/model0.pt
+[0] Time spent = 1.69 s
+0: other/epoch_time  : 1.68
+0: other/speed       : 595.46
+0: score/best        : -0.16
+0: score/neg_loss    : -0.16
+0: train/grad_norm   [ 1000]: avg:   0.0781, min:   0.0434[ 835], max:   0.3584[   1]
+0: train/loss        [ 1000]: avg:   0.1632, min:   0.1235[ 884], max:   0.2075[  20]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.2 |  12.9 |
+| train    |  1000 |           1.4 |  87.1 |
+| total(s) |     1 |           1.6 | 100   |
+epoch    1/100 | loss=0.163191 | val_loss=0.157514 | best=-0.1575 | saved=True
+Mem info: used: 2.744 GB, avail: 12.349 GB, total: 15.461 GB
+[1] Time spent = 1.53 s
+1: other/epoch_time  : 1.52
+1: other/speed       : 659.43
+1: score/best        : -0.16
+1: score/neg_loss    : -0.16
+1: train/grad_norm   [ 1000]: avg:   0.0579, min:   0.0346[ 890], max:   0.1301[ 255]
+1: train/loss        [ 1000]: avg:   0.1617, min:   0.1259[ 314], max:   0.2019[ 716]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.2 |  14.3 |
+| train    |  1000 |           1.2 |  85.7 |
+| total(s) |     1 |           1.4 | 100   |
+epoch    2/100 | loss=0.161739 | val_loss=0.159446 | best=-0.1575 | saved=False
+Mem info: used: 2.744 GB, avail: 12.350 GB, total: 15.461 GB
+[2] Time spent = 1.53 s
+2: other/epoch_time  : 1.52
+2: other/speed       : 655.89
+2: score/best        : -0.16
+2: score/neg_loss    : -0.16
+2: train/grad_norm   [ 1000]: avg:   0.0559, min:   0.0323[ 206], max:   0.1302[ 331]
+2: train/loss        [ 1000]: avg:   0.1609, min:   0.1259[ 944], max:   0.2003[  56]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.2 |  14.2 |
+| train    |  1000 |           1.2 |  85.8 |
+| total(s) |     1 |           1.4 | 100   |
+epoch    3/100 | loss=0.160880 | val_loss=0.163053 | best=-0.1575 | saved=False
+Mem info: used: 2.744 GB, avail: 12.349 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[3] Time spent = 1.53 s
+3: other/epoch_time  : 1.50
+3: other/speed       : 665.40
+3: score/best        : -0.16
+3: score/neg_loss    : -0.16
+3: train/grad_norm   [ 1000]: avg:   0.0655, min:   0.0363[  20], max:   0.1787[ 954]
+3: train/loss        [ 1000]: avg:   0.1594, min:   0.1256[ 684], max:   0.1941[ 888]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.2 |  14.2 |
+| train    |  1000 |           1.2 |  85.8 |
+| total(s) |     1 |           1.4 | 100   |
+epoch    4/100 | loss=0.159395 | val_loss=0.155037 | best=-0.1550 | saved=True
+Mem info: used: 2.744 GB, avail: 12.350 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[4] Time spent = 4.23 s
+4: other/epoch_time  : 4.19
+4: other/speed       : 238.88
+4: score/best        : -0.15
+4: score/neg_loss    : -0.15
+4: train/grad_norm   [ 1000]: avg:   0.0891, min:   0.0501[ 233], max:   0.1878[ 975]
+4: train/loss        [ 1000]: avg:   0.1556, min:   0.1154[ 772], max:   0.1907[ 807]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.8 |  37.3 |
+| train    |  1000 |           1.3 |  62.7 |
+| total(s) |     1 |           2   | 100   |
+epoch    5/100 | loss=0.155566 | val_loss=0.147273 | best=-0.1473 | saved=True
+Mem info: used: 2.744 GB, avail: 12.350 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[5] Time spent = 4.46 s
+5: other/epoch_time  : 4.42
+5: other/speed       : 226.20
+5: score/best        : -0.14
+5: score/neg_loss    : -0.14
+5: train/grad_norm   [ 1000]: avg:   0.1050, min:   0.0628[ 973], max:   0.2238[ 358]
+5: train/loss        [ 1000]: avg:   0.1496, min:   0.1137[ 300], max:   0.1982[  91]
+Timer Info:
+| name     |   num |   t/call (ms) |   % |
+|----------+-------+---------------+-----|
+| sample   |  1000 |           0.8 |  37 |
+| train    |  1000 |           1.3 |  63 |
+| total(s) |     1 |           2.1 | 100 |
+epoch    6/100 | loss=0.149598 | val_loss=0.143799 | best=-0.1438 | saved=True
+Mem info: used: 2.744 GB, avail: 12.350 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[6] Time spent = 4.40 s
+6: other/epoch_time  : 4.37
+6: other/speed       : 228.83
+6: score/best        : -0.14
+6: score/neg_loss    : -0.14
+6: train/grad_norm   [ 1000]: avg:   0.1032, min:   0.0604[ 317], max:   0.2136[ 166]
+6: train/loss        [ 1000]: avg:   0.1466, min:   0.1082[ 797], max:   0.1773[ 721]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.8 |  36.8 |
+| train    |  1000 |           1.3 |  63.2 |
+| total(s) |     1 |           2.1 | 100   |
+epoch    7/100 | loss=0.146628 | val_loss=0.143588 | best=-0.1436 | saved=True
+Mem info: used: 2.744 GB, avail: 12.349 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[7] Time spent = 4.77 s
+7: other/epoch_time  : 4.72
+7: other/speed       : 211.75
+7: score/best        : -0.14
+7: score/neg_loss    : -0.14
+7: train/grad_norm   [ 1000]: avg:   0.1376, min:   0.0720[  15], max:   0.3066[ 904]
+7: train/loss        [ 1000]: avg:   0.1434, min:   0.1075[ 331], max:   0.1806[ 772]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.9 |  38.4 |
+| train    |  1000 |           1.4 |  61.6 |
+| total(s) |     1 |           2.3 | 100   |
+epoch    8/100 | loss=0.143377 | val_loss=0.135660 | best=-0.1357 | saved=True
+Mem info: used: 2.744 GB, avail: 12.349 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[8] Time spent = 4.75 s
+8: other/epoch_time  : 4.70
+8: other/speed       : 212.71
+8: score/best        : -0.13
+8: score/neg_loss    : -0.13
+8: train/grad_norm   [ 1000]: avg:   0.2146, min:   0.1164[  42], max:   0.4520[ 658]
+8: train/loss        [ 1000]: avg:   0.1379, min:   0.1090[ 571], max:   0.1770[ 134]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.9 |  38.5 |
+| train    |  1000 |           1.4 |  61.5 |
+| total(s) |     1 |           2.2 | 100   |
+epoch    9/100 | loss=0.137936 | val_loss=0.127840 | best=-0.1278 | saved=True
+Mem info: used: 2.744 GB, avail: 12.349 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[9] Time spent = 4.73 s
+9: other/epoch_time  : 4.69
+9: other/speed       : 213.39
+9: score/best        : -0.12
+9: score/neg_loss    : -0.12
+9: train/grad_norm   [ 1000]: avg:   0.3177, min:   0.1651[  40], max:   0.6642[ 648]
+9: train/loss        [ 1000]: avg:   0.1323, min:   0.0990[ 788], max:   0.1620[  90]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.9 |  38.5 |
+| train    |  1000 |           1.4 |  61.5 |
+| total(s) |     1 |           2.2 | 100   |
+epoch   10/100 | loss=0.132303 | val_loss=0.120933 | best=-0.1209 | saved=True
+Mem info: used: 2.744 GB, avail: 12.346 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[10] Time spent = 4.83 s
+10: other/epoch_time  : 4.81
+10: other/speed       : 208.08
+10: score/best        : -0.12
+10: score/neg_loss    : -0.12
+10: train/grad_norm   [ 1000]: avg:   0.4356, min:   0.2204[ 174], max:   1.0054[ 864]
+10: train/loss        [ 1000]: avg:   0.1279, min:   0.0981[ 157], max:   0.1610[ 400]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.9 |  38.4 |
+| train    |  1000 |           1.4 |  61.6 |
+| total(s) |     1 |           2.3 | 100   |
+epoch   11/100 | loss=0.127887 | val_loss=0.119417 | best=-0.1194 | saved=True
+Mem info: used: 2.744 GB, avail: 12.346 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[11] Time spent = 4.14 s
+11: other/epoch_time  : 4.10
+11: other/speed       : 243.75
+11: score/best        : -0.11
+11: score/neg_loss    : -0.11
+11: train/grad_norm   [ 1000]: avg:   0.5517, min:   0.2820[ 231], max:   1.5040[ 754]
+11: train/loss        [ 1000]: avg:   0.1231, min:   0.0827[ 948], max:   0.1556[ 123]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.7 |  35.8 |
+| train    |  1000 |           1.2 |  64.2 |
+| total(s) |     1 |           1.8 | 100   |
+epoch   12/100 | loss=0.123125 | val_loss=0.111221 | best=-0.1112 | saved=True
+Mem info: used: 2.744 GB, avail: 12.346 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[12] Time spent = 4.20 s
+12: other/epoch_time  : 4.16
+12: other/speed       : 240.30
+12: score/best        : -0.11
+12: score/neg_loss    : -0.11
+12: train/grad_norm   [ 1000]: avg:   0.6849, min:   0.3314[ 280], max:   1.7323[ 755]
+12: train/loss        [ 1000]: avg:   0.1192, min:   0.0910[ 875], max:   0.1504[ 551]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.7 |  36.6 |
+| train    |  1000 |           1.2 |  63.4 |
+| total(s) |     1 |           1.9 | 100   |
+epoch   13/100 | loss=0.119152 | val_loss=0.108453 | best=-0.1085 | saved=True
+Mem info: used: 2.744 GB, avail: 12.346 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[13] Time spent = 4.30 s
+13: other/epoch_time  : 4.27
+13: other/speed       : 234.37
+13: score/best        : -0.10
+13: score/neg_loss    : -0.10
+13: train/grad_norm   [ 1000]: avg:   0.8354, min:   0.4613[ 241], max:   2.1168[ 907]
+13: train/loss        [ 1000]: avg:   0.1138, min:   0.0871[ 534], max:   0.1450[  47]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.7 |  35.8 |
+| train    |  1000 |           1.2 |  64.2 |
+| total(s) |     1 |           1.9 | 100   |
+epoch   14/100 | loss=0.113835 | val_loss=0.099792 | best=-0.0998 | saved=True
+Mem info: used: 2.744 GB, avail: 12.346 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[14] Time spent = 4.27 s
+14: other/epoch_time  : 4.23
+14: other/speed       : 236.22
+14: score/best        : -0.09
+14: score/neg_loss    : -0.09
+14: train/grad_norm   [ 1000]: avg:   1.0133, min:   0.5112[ 659], max:   2.0264[ 959]
+14: train/loss        [ 1000]: avg:   0.1074, min:   0.0800[ 925], max:   0.1365[  84]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.7 |  36.1 |
+| train    |  1000 |           1.2 |  63.9 |
+| total(s) |     1 |           1.9 | 100   |
+epoch   15/100 | loss=0.107355 | val_loss=0.088916 | best=-0.0889 | saved=True
+Mem info: used: 2.744 GB, avail: 12.346 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[15] Time spent = 4.30 s
+15: other/epoch_time  : 4.25
+15: other/speed       : 235.17
+15: score/best        : -0.09
+15: score/neg_loss    : -0.09
+15: train/grad_norm   [ 1000]: avg:   1.1923, min:   0.6932[ 126], max:   2.7367[ 647]
+15: train/loss        [ 1000]: avg:   0.0986, min:   0.0694[ 184], max:   0.1246[ 836]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.7 |  36.6 |
+| train    |  1000 |           1.2 |  63.4 |
+| total(s) |     1 |           1.9 | 100   |
+epoch   16/100 | loss=0.098644 | val_loss=0.085824 | best=-0.0858 | saved=True
+Mem info: used: 2.744 GB, avail: 12.346 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[16] Time spent = 4.23 s
+16: other/epoch_time  : 4.19
+16: other/speed       : 238.50
+16: score/best        : -0.08
+16: score/neg_loss    : -0.08
+16: train/grad_norm   [ 1000]: avg:   1.3858, min:   0.7807[  70], max:   2.8743[ 903]
+16: train/loss        [ 1000]: avg:   0.0917, min:   0.0669[ 904], max:   0.1242[  64]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.7 |  35.7 |
+| train    |  1000 |           1.2 |  64.3 |
+| total(s) |     1 |           1.9 | 100   |
+epoch   17/100 | loss=0.091689 | val_loss=0.077586 | best=-0.0776 | saved=True
+Mem info: used: 2.744 GB, avail: 12.346 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[17] Time spent = 4.18 s
+17: other/epoch_time  : 4.14
+17: other/speed       : 241.57
+17: score/best        : -0.07
+17: score/neg_loss    : -0.07
+17: train/grad_norm   [ 1000]: avg:   1.4769, min:   0.7905[   1], max:   3.0267[ 368]
+17: train/loss        [ 1000]: avg:   0.0869, min:   0.0621[ 621], max:   0.1145[ 619]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.7 |  35.6 |
+| train    |  1000 |           1.2 |  64.4 |
+| total(s) |     1 |           1.9 | 100   |
+epoch   18/100 | loss=0.086897 | val_loss=0.074890 | best=-0.0749 | saved=True
+Mem info: used: 2.744 GB, avail: 12.346 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[18] Time spent = 4.84 s
+18: other/epoch_time  : 4.80
+18: other/speed       : 208.12
+18: score/best        : -0.07
+18: score/neg_loss    : -0.07
+18: train/grad_norm   [ 1000]: avg:   1.5458, min:   0.8426[ 917], max:   3.0721[ 946]
+18: train/loss        [ 1000]: avg:   0.0837, min:   0.0593[  31], max:   0.1073[ 651]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.9 |  38.9 |
+| train    |  1000 |           1.4 |  61.1 |
+| total(s) |     1 |           2.2 | 100   |
+epoch   19/100 | loss=0.083692 | val_loss=0.071183 | best=-0.0712 | saved=True
+Mem info: used: 2.744 GB, avail: 12.346 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[19] Time spent = 5.06 s
+19: other/epoch_time  : 5.01
+19: other/speed       : 199.77
+19: score/best        : -0.07
+19: score/neg_loss    : -0.07
+19: train/grad_norm   [ 1000]: avg:   1.5867, min:   0.8730[ 554], max:   3.0362[ 709]
+19: train/loss        [ 1000]: avg:   0.0815, min:   0.0575[ 803], max:   0.1082[ 789]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           1   |  39.9 |
+| train    |  1000 |           1.5 |  60.1 |
+| total(s) |     1 |           2.4 | 100   |
+epoch   20/100 | loss=0.081498 | val_loss=0.069806 | best=-0.0698 | saved=True
+Mem info: used: 2.744 GB, avail: 12.346 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[20] Time spent = 5.10 s
+20: other/epoch_time  : 5.05
+20: other/speed       : 197.93
+20: score/best        : -0.07
+20: score/neg_loss    : -0.07
+20: train/grad_norm   [ 1000]: avg:   1.6660, min:   0.9294[ 738], max:   3.5828[ 166]
+20: train/loss        [ 1000]: avg:   0.0790, min:   0.0590[ 496], max:   0.1051[ 137]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           1   |  40.5 |
+| train    |  1000 |           1.4 |  59.5 |
+| total(s) |     1 |           2.4 | 100   |
+epoch   21/100 | loss=0.078970 | val_loss=0.067222 | best=-0.0672 | saved=True
+Mem info: used: 2.744 GB, avail: 12.346 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[21] Time spent = 5.13 s
+21: other/epoch_time  : 5.08
+21: other/speed       : 196.83
+21: score/best        : -0.06
+21: score/neg_loss    : -0.06
+21: train/grad_norm   [ 1000]: avg:   1.7160, min:   1.0210[ 953], max:   4.6242[   1]
+21: train/loss        [ 1000]: avg:   0.0777, min:   0.0540[ 450], max:   0.0997[ 745]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           1   |  40.9 |
+| train    |  1000 |           1.4 |  59.1 |
+| total(s) |     1 |           2.4 | 100   |
+epoch   22/100 | loss=0.077723 | val_loss=0.063847 | best=-0.0638 | saved=True
+Mem info: used: 2.744 GB, avail: 12.346 GB, total: 15.461 GB
+[22] Time spent = 5.04 s
+22: other/epoch_time  : 4.99
+22: other/speed       : 200.32
+22: score/best        : -0.06
+22: score/neg_loss    : -0.06
+22: train/grad_norm   [ 1000]: avg:   1.8087, min:   0.9123[  89], max:   4.4080[ 562]
+22: train/loss        [ 1000]: avg:   0.0760, min:   0.0559[ 850], max:   0.1003[ 282]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           1   |  40.3 |
+| train    |  1000 |           1.4 |  59.7 |
+| total(s) |     1 |           2.4 | 100   |
+epoch   23/100 | loss=0.076034 | val_loss=0.064348 | best=-0.0638 | saved=False
+Mem info: used: 2.744 GB, avail: 12.346 GB, total: 15.461 GB
+[23] Time spent = 5.10 s
+23: other/epoch_time  : 5.04
+23: other/speed       : 198.27
+23: score/best        : -0.06
+23: score/neg_loss    : -0.06
+23: train/grad_norm   [ 1000]: avg:   1.8359, min:   1.0268[ 531], max:   4.7618[ 632]
+23: train/loss        [ 1000]: avg:   0.0747, min:   0.0556[ 396], max:   0.0997[ 247]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           1   |  40.5 |
+| train    |  1000 |           1.4 |  59.5 |
+| total(s) |     1 |           2.4 | 100   |
+epoch   24/100 | loss=0.074660 | val_loss=0.064299 | best=-0.0638 | saved=False
+Mem info: used: 2.744 GB, avail: 12.346 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[24] Time spent = 4.85 s
+24: other/epoch_time  : 4.80
+24: other/speed       : 208.52
+24: score/best        : -0.06
+24: score/neg_loss    : -0.06
+24: train/grad_norm   [ 1000]: avg:   1.9101, min:   1.0193[ 201], max:   4.6014[ 325]
+24: train/loss        [ 1000]: avg:   0.0738, min:   0.0506[ 184], max:   0.1031[ 460]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.9 |  38.9 |
+| train    |  1000 |           1.4 |  61.1 |
+| total(s) |     1 |           2.3 | 100   |
+epoch   25/100 | loss=0.073828 | val_loss=0.061066 | best=-0.0611 | saved=True
+Mem info: used: 2.744 GB, avail: 12.346 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[25] Time spent = 4.85 s
+25: other/epoch_time  : 4.80
+25: other/speed       : 208.26
+25: score/best        : -0.06
+25: score/neg_loss    : -0.06
+25: train/grad_norm   [ 1000]: avg:   1.8995, min:   1.0590[ 840], max:   4.7623[ 642]
+25: train/loss        [ 1000]: avg:   0.0719, min:   0.0498[ 452], max:   0.0947[ 243]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.9 |  38.6 |
+| train    |  1000 |           1.4 |  61.4 |
+| total(s) |     1 |           2.3 | 100   |
+epoch   26/100 | loss=0.071932 | val_loss=0.060851 | best=-0.0609 | saved=True
+Mem info: used: 2.744 GB, avail: 12.346 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[26] Time spent = 4.81 s
+26: other/epoch_time  : 4.76
+26: other/speed       : 209.87
+26: score/best        : -0.06
+26: score/neg_loss    : -0.06
+26: train/grad_norm   [ 1000]: avg:   1.9845, min:   0.9901[ 627], max:   4.3366[ 705]
+26: train/loss        [ 1000]: avg:   0.0713, min:   0.0498[ 640], max:   0.0958[  90]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.9 |  38.5 |
+| train    |  1000 |           1.4 |  61.5 |
+| total(s) |     1 |           2.3 | 100   |
+epoch   27/100 | loss=0.071346 | val_loss=0.060244 | best=-0.0602 | saved=True
+Mem info: used: 2.744 GB, avail: 12.346 GB, total: 15.461 GB
+[27] Time spent = 4.75 s
+27: other/epoch_time  : 4.72
+27: other/speed       : 211.71
+27: score/best        : -0.06
+27: score/neg_loss    : -0.06
+27: train/grad_norm   [ 1000]: avg:   2.0317, min:   1.0104[ 518], max:   4.5854[ 765]
+27: train/loss        [ 1000]: avg:   0.0705, min:   0.0490[ 881], max:   0.0974[ 786]
+Timer Info:
+| name     |   num |   t/call (ms) |   % |
+|----------+-------+---------------+-----|
+| sample   |  1000 |           0.9 |  38 |
+| train    |  1000 |           1.4 |  62 |
+| total(s) |     1 |           2.3 | 100 |
+epoch   28/100 | loss=0.070521 | val_loss=0.062571 | best=-0.0602 | saved=False
+Mem info: used: 2.744 GB, avail: 12.346 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[28] Time spent = 4.78 s
+28: other/epoch_time  : 4.74
+28: other/speed       : 211.11
+28: score/best        : -0.06
+28: score/neg_loss    : -0.06
+28: train/grad_norm   [ 1000]: avg:   2.0859, min:   1.0341[  51], max:   5.3831[ 730]
+28: train/loss        [ 1000]: avg:   0.0702, min:   0.0495[ 153], max:   0.0920[ 332]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.9 |  38.1 |
+| train    |  1000 |           1.4 |  61.9 |
+| total(s) |     1 |           2.2 | 100   |
+epoch   29/100 | loss=0.070247 | val_loss=0.060237 | best=-0.0602 | saved=True
+Mem info: used: 2.744 GB, avail: 12.346 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[29] Time spent = 4.84 s
+29: other/epoch_time  : 4.79
+29: other/speed       : 208.68
+29: score/best        : -0.05
+29: score/neg_loss    : -0.05
+29: train/grad_norm   [ 1000]: avg:   2.0869, min:   0.9958[ 918], max:   4.9266[ 392]
+29: train/loss        [ 1000]: avg:   0.0693, min:   0.0471[ 145], max:   0.0900[ 806]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.9 |  38.1 |
+| train    |  1000 |           1.4 |  61.9 |
+| total(s) |     1 |           2.3 | 100   |
+epoch   30/100 | loss=0.069292 | val_loss=0.054913 | best=-0.0549 | saved=True
+Mem info: used: 2.744 GB, avail: 12.346 GB, total: 15.461 GB
+[30] Time spent = 4.76 s
+30: other/epoch_time  : 4.72
+30: other/speed       : 211.67
+30: score/best        : -0.05
+30: score/neg_loss    : -0.06
+30: train/grad_norm   [ 1000]: avg:   2.0962, min:   0.9838[ 665], max:   5.8338[ 917]
+30: train/loss        [ 1000]: avg:   0.0686, min:   0.0478[ 198], max:   0.0896[ 964]
+Timer Info:
+| name     |   num |   t/call (ms) |   % |
+|----------+-------+---------------+-----|
+| sample   |  1000 |           0.9 |  38 |
+| train    |  1000 |           1.4 |  62 |
+| total(s) |     1 |           2.2 | 100 |
+epoch   31/100 | loss=0.068557 | val_loss=0.058943 | best=-0.0549 | saved=False
+Mem info: used: 2.744 GB, avail: 12.346 GB, total: 15.461 GB
+[31] Time spent = 4.74 s
+31: other/epoch_time  : 4.70
+31: other/speed       : 212.67
+31: score/best        : -0.05
+31: score/neg_loss    : -0.06
+31: train/grad_norm   [ 1000]: avg:   2.1429, min:   1.0361[ 724], max:   5.9846[ 139]
+31: train/loss        [ 1000]: avg:   0.0682, min:   0.0478[ 301], max:   0.0895[ 266]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.8 |  37.8 |
+| train    |  1000 |           1.4 |  62.2 |
+| total(s) |     1 |           2.2 | 100   |
+epoch   32/100 | loss=0.068180 | val_loss=0.058561 | best=-0.0549 | saved=False
+Mem info: used: 2.744 GB, avail: 12.346 GB, total: 15.461 GB
+[32] Time spent = 4.76 s
+32: other/epoch_time  : 4.71
+32: other/speed       : 212.20
+32: score/best        : -0.05
+32: score/neg_loss    : -0.06
+32: train/grad_norm   [ 1000]: avg:   2.1411, min:   0.8967[ 580], max:   6.8512[ 636]
+32: train/loss        [ 1000]: avg:   0.0674, min:   0.0472[ 498], max:   0.0867[  68]
+Timer Info:
+| name     |   num |   t/call (ms) |   % |
+|----------+-------+---------------+-----|
+| sample   |  1000 |           0.8 |  38 |
+| train    |  1000 |           1.4 |  62 |
+| total(s) |     1 |           2.2 | 100 |
+epoch   33/100 | loss=0.067437 | val_loss=0.059162 | best=-0.0549 | saved=False
+Mem info: used: 2.744 GB, avail: 12.346 GB, total: 15.461 GB
+[33] Time spent = 4.78 s
+33: other/epoch_time  : 4.74
+33: other/speed       : 210.96
+33: score/best        : -0.05
+33: score/neg_loss    : -0.06
+33: train/grad_norm   [ 1000]: avg:   2.1996, min:   0.8480[ 218], max:   6.7141[ 240]
+33: train/loss        [ 1000]: avg:   0.0672, min:   0.0419[  33], max:   0.0905[ 494]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.9 |  37.9 |
+| train    |  1000 |           1.4 |  62.1 |
+| total(s) |     1 |           2.3 | 100   |
+epoch   34/100 | loss=0.067185 | val_loss=0.056774 | best=-0.0549 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[34] Time spent = 4.74 s
+34: other/epoch_time  : 4.70
+34: other/speed       : 212.99
+34: score/best        : -0.05
+34: score/neg_loss    : -0.05
+34: train/grad_norm   [ 1000]: avg:   2.1628, min:   1.0252[ 856], max:   7.2033[ 461]
+34: train/loss        [ 1000]: avg:   0.0667, min:   0.0437[ 214], max:   0.0865[ 116]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.8 |  37.9 |
+| train    |  1000 |           1.4 |  62.1 |
+| total(s) |     1 |           2.2 | 100   |
+epoch   35/100 | loss=0.066696 | val_loss=0.054776 | best=-0.0548 | saved=True
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[35] Time spent = 4.89 s
+35: other/epoch_time  : 4.85
+35: other/speed       : 206.20
+35: score/best        : -0.05
+35: score/neg_loss    : -0.06
+35: train/grad_norm   [ 1000]: avg:   2.1938, min:   0.9552[ 503], max:   6.3307[ 145]
+35: train/loss        [ 1000]: avg:   0.0663, min:   0.0495[ 749], max:   0.0866[ 269]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.9 |  39.1 |
+| train    |  1000 |           1.4 |  60.9 |
+| total(s) |     1 |           2.3 | 100   |
+epoch   36/100 | loss=0.066306 | val_loss=0.055341 | best=-0.0548 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[36] Time spent = 4.84 s
+36: other/epoch_time  : 4.80
+36: other/speed       : 208.24
+36: score/best        : -0.05
+36: score/neg_loss    : -0.06
+36: train/grad_norm   [ 1000]: avg:   2.1943, min:   1.0753[ 176], max:   6.5240[ 685]
+36: train/loss        [ 1000]: avg:   0.0657, min:   0.0457[ 502], max:   0.0864[ 692]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.9 |  38.3 |
+| train    |  1000 |           1.4 |  61.7 |
+| total(s) |     1 |           2.3 | 100   |
+epoch   37/100 | loss=0.065664 | val_loss=0.057678 | best=-0.0548 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[37] Time spent = 4.91 s
+37: other/epoch_time  : 4.87
+37: other/speed       : 205.25
+37: score/best        : -0.05
+37: score/neg_loss    : -0.05
+37: train/grad_norm   [ 1000]: avg:   2.2544, min:   1.0740[ 574], max:   6.1285[ 168]
+37: train/loss        [ 1000]: avg:   0.0656, min:   0.0464[ 283], max:   0.0910[ 995]
+Timer Info:
+| name     |   num |   t/call (ms) |   % |
+|----------+-------+---------------+-----|
+| sample   |  1000 |           0.9 |  39 |
+| train    |  1000 |           1.4 |  61 |
+| total(s) |     1 |           2.3 | 100 |
+epoch   38/100 | loss=0.065631 | val_loss=0.053972 | best=-0.0540 | saved=True
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[38] Time spent = 4.94 s
+38: other/epoch_time  : 4.89
+38: other/speed       : 204.63
+38: score/best        : -0.05
+38: score/neg_loss    : -0.05
+38: train/grad_norm   [ 1000]: avg:   2.1954, min:   0.9877[ 864], max:   7.4454[ 119]
+38: train/loss        [ 1000]: avg:   0.0654, min:   0.0460[ 794], max:   0.0874[ 656]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.9 |  39.2 |
+| train    |  1000 |           1.4 |  60.8 |
+| total(s) |     1 |           2.3 | 100   |
+epoch   39/100 | loss=0.065364 | val_loss=0.054739 | best=-0.0540 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[39] Time spent = 5.02 s
+39: other/epoch_time  : 4.98
+39: other/speed       : 200.99
+39: score/best        : -0.05
+39: score/neg_loss    : -0.05
+39: train/grad_norm   [ 1000]: avg:   2.2182, min:   0.9908[ 293], max:   7.4659[ 178]
+39: train/loss        [ 1000]: avg:   0.0649, min:   0.0440[ 894], max:   0.0873[ 567]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.9 |  39.2 |
+| train    |  1000 |           1.4 |  60.8 |
+| total(s) |     1 |           2.3 | 100   |
+epoch   40/100 | loss=0.064868 | val_loss=0.054506 | best=-0.0540 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[40] Time spent = 4.90 s
+40: other/epoch_time  : 4.86
+40: other/speed       : 205.95
+40: score/best        : -0.05
+40: score/neg_loss    : -0.06
+40: train/grad_norm   [ 1000]: avg:   2.2320, min:   0.9438[ 328], max:   6.7074[ 147]
+40: train/loss        [ 1000]: avg:   0.0647, min:   0.0449[  65], max:   0.0917[ 963]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.9 |  38.3 |
+| train    |  1000 |           1.4 |  61.7 |
+| total(s) |     1 |           2.3 | 100   |
+epoch   41/100 | loss=0.064683 | val_loss=0.055576 | best=-0.0540 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[41] Time spent = 4.92 s
+41: other/epoch_time  : 4.89
+41: other/speed       : 204.57
+41: score/best        : -0.05
+41: score/neg_loss    : -0.06
+41: train/grad_norm   [ 1000]: avg:   2.3155, min:   1.0309[ 921], max:   6.5901[ 322]
+41: train/loss        [ 1000]: avg:   0.0645, min:   0.0433[ 781], max:   0.0851[ 204]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.9 |  39.2 |
+| train    |  1000 |           1.4 |  60.8 |
+| total(s) |     1 |           2.3 | 100   |
+epoch   42/100 | loss=0.064455 | val_loss=0.055801 | best=-0.0540 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[42] Time spent = 4.92 s
+42: other/epoch_time  : 4.88
+42: other/speed       : 205.08
+42: score/best        : -0.05
+42: score/neg_loss    : -0.05
+42: train/grad_norm   [ 1000]: avg:   2.2572, min:   1.0813[ 749], max:   6.6049[ 869]
+42: train/loss        [ 1000]: avg:   0.0640, min:   0.0463[ 665], max:   0.0875[ 119]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.9 |  38.9 |
+| train    |  1000 |           1.4 |  61.1 |
+| total(s) |     1 |           2.3 | 100   |
+epoch   43/100 | loss=0.063973 | val_loss=0.054113 | best=-0.0540 | saved=False
+Mem info: used: 2.744 GB, avail: 12.346 GB, total: 15.461 GB
+[43] Time spent = 4.91 s
+43: other/epoch_time  : 4.88
+43: other/speed       : 205.12
+43: score/best        : -0.05
+43: score/neg_loss    : -0.05
+43: train/grad_norm   [ 1000]: avg:   2.2979, min:   1.0970[ 567], max:   9.1848[ 715]
+43: train/loss        [ 1000]: avg:   0.0638, min:   0.0449[ 474], max:   0.0897[  54]
+Timer Info:
+| name     |   num |   t/call (ms) |   % |
+|----------+-------+---------------+-----|
+| sample   |  1000 |           0.9 |  39 |
+| train    |  1000 |           1.4 |  61 |
+| total(s) |     1 |           2.3 | 100 |
+epoch   44/100 | loss=0.063791 | val_loss=0.054766 | best=-0.0540 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[44] Time spent = 4.89 s
+44: other/epoch_time  : 4.85
+44: other/speed       : 206.31
+44: score/best        : -0.05
+44: score/neg_loss    : -0.06
+44: train/grad_norm   [ 1000]: avg:   2.3346, min:   1.0143[ 801], max:   7.0329[  76]
+44: train/loss        [ 1000]: avg:   0.0637, min:   0.0405[ 762], max:   0.0838[ 535]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.9 |  38.4 |
+| train    |  1000 |           1.4 |  61.6 |
+| total(s) |     1 |           2.3 | 100   |
+epoch   45/100 | loss=0.063715 | val_loss=0.055757 | best=-0.0540 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[45] Time spent = 4.89 s
+45: other/epoch_time  : 4.85
+45: other/speed       : 206.14
+45: score/best        : -0.05
+45: score/neg_loss    : -0.06
+45: train/grad_norm   [ 1000]: avg:   2.3033, min:   0.9175[ 689], max:   7.3235[  65]
+45: train/loss        [ 1000]: avg:   0.0631, min:   0.0428[ 878], max:   0.0839[ 140]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.9 |  38.8 |
+| train    |  1000 |           1.4 |  61.2 |
+| total(s) |     1 |           2.3 | 100   |
+epoch   46/100 | loss=0.063102 | val_loss=0.055134 | best=-0.0540 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[46] Time spent = 4.93 s
+46: other/epoch_time  : 4.89
+46: other/speed       : 204.53
+46: score/best        : -0.05
+46: score/neg_loss    : -0.05
+46: train/grad_norm   [ 1000]: avg:   2.3715, min:   0.9910[ 633], max:   9.5502[ 412]
+46: train/loss        [ 1000]: avg:   0.0631, min:   0.0438[ 656], max:   0.0874[ 333]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.9 |  39.2 |
+| train    |  1000 |           1.4 |  60.8 |
+| total(s) |     1 |           2.3 | 100   |
+epoch   47/100 | loss=0.063076 | val_loss=0.051886 | best=-0.0519 | saved=True
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[47] Time spent = 4.91 s
+47: other/epoch_time  : 4.86
+47: other/speed       : 205.61
+47: score/best        : -0.05
+47: score/neg_loss    : -0.05
+47: train/grad_norm   [ 1000]: avg:   2.4575, min:   0.9608[ 393], max:   7.1335[ 534]
+47: train/loss        [ 1000]: avg:   0.0636, min:   0.0383[ 320], max:   0.0882[ 921]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.9 |  39.1 |
+| train    |  1000 |           1.4 |  60.9 |
+| total(s) |     1 |           2.3 | 100   |
+epoch   48/100 | loss=0.063582 | val_loss=0.052467 | best=-0.0519 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[48] Time spent = 4.89 s
+48: other/epoch_time  : 4.86
+48: other/speed       : 205.91
+48: score/best        : -0.05
+48: score/neg_loss    : -0.05
+48: train/grad_norm   [ 1000]: avg:   2.3541, min:   1.0585[ 486], max:  10.3641[ 450]
+48: train/loss        [ 1000]: avg:   0.0628, min:   0.0400[ 224], max:   0.0840[ 197]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.9 |  39.3 |
+| train    |  1000 |           1.4 |  60.7 |
+| total(s) |     1 |           2.3 | 100   |
+epoch   49/100 | loss=0.062834 | val_loss=0.052849 | best=-0.0519 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[49] Time spent = 4.88 s
+49: other/epoch_time  : 4.84
+49: other/speed       : 206.54
+49: score/best        : -0.05
+49: score/neg_loss    : -0.05
+49: train/grad_norm   [ 1000]: avg:   2.3730, min:   1.0944[ 270], max:   8.2280[ 981]
+49: train/loss        [ 1000]: avg:   0.0624, min:   0.0446[  62], max:   0.0844[ 386]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.9 |  38.3 |
+| train    |  1000 |           1.4 |  61.7 |
+| total(s) |     1 |           2.3 | 100   |
+epoch   50/100 | loss=0.062444 | val_loss=0.053104 | best=-0.0519 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[50] Time spent = 4.69 s
+50: other/epoch_time  : 4.64
+50: other/speed       : 215.55
+50: score/best        : -0.05
+50: score/neg_loss    : -0.05
+50: train/grad_norm   [ 1000]: avg:   2.4255, min:   0.9963[ 902], max:  10.7238[ 363]
+50: train/loss        [ 1000]: avg:   0.0628, min:   0.0434[ 617], max:   0.0829[ 676]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.8 |  37.5 |
+| train    |  1000 |           1.3 |  62.5 |
+| total(s) |     1 |           2.2 | 100   |
+epoch   51/100 | loss=0.062773 | val_loss=0.051375 | best=-0.0514 | saved=True
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[51] Time spent = 4.75 s
+51: other/epoch_time  : 4.72
+51: other/speed       : 211.90
+51: score/best        : -0.05
+51: score/neg_loss    : -0.05
+51: train/grad_norm   [ 1000]: avg:   2.4011, min:   1.0879[ 771], max:   8.3526[ 787]
+51: train/loss        [ 1000]: avg:   0.0620, min:   0.0442[  48], max:   0.0803[ 554]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.9 |  38.2 |
+| train    |  1000 |           1.4 |  61.8 |
+| total(s) |     1 |           2.2 | 100   |
+epoch   52/100 | loss=0.062031 | val_loss=0.053876 | best=-0.0514 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[52] Time spent = 4.71 s
+52: other/epoch_time  : 4.67
+52: other/speed       : 214.31
+52: score/best        : -0.05
+52: score/neg_loss    : -0.05
+52: train/grad_norm   [ 1000]: avg:   2.3824, min:   1.1234[ 777], max:   7.7777[ 539]
+52: train/loss        [ 1000]: avg:   0.0620, min:   0.0409[ 585], max:   0.0863[ 252]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.8 |  38.2 |
+| train    |  1000 |           1.4 |  61.8 |
+| total(s) |     1 |           2.2 | 100   |
+epoch   53/100 | loss=0.061952 | val_loss=0.052458 | best=-0.0514 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[53] Time spent = 4.45 s
+53: other/epoch_time  : 4.42
+53: other/speed       : 226.42
+53: score/best        : -0.05
+53: score/neg_loss    : -0.05
+53: train/grad_norm   [ 1000]: avg:   2.3762, min:   1.0386[ 520], max:   7.4749[ 238]
+53: train/loss        [ 1000]: avg:   0.0615, min:   0.0451[ 880], max:   0.0795[ 839]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.8 |  37.1 |
+| train    |  1000 |           1.3 |  62.9 |
+| total(s) |     1 |           2.1 | 100   |
+epoch   54/100 | loss=0.061495 | val_loss=0.053020 | best=-0.0514 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[54] Time spent = 4.62 s
+54: other/epoch_time  : 4.58
+54: other/speed       : 218.13
+54: score/best        : -0.05
+54: score/neg_loss    : -0.05
+54: train/grad_norm   [ 1000]: avg:   2.4388, min:   1.1534[ 975], max:   8.3295[ 458]
+54: train/loss        [ 1000]: avg:   0.0616, min:   0.0444[ 683], max:   0.0829[ 331]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.8 |  37.5 |
+| train    |  1000 |           1.3 |  62.5 |
+| total(s) |     1 |           2.1 | 100   |
+epoch   55/100 | loss=0.061614 | val_loss=0.051396 | best=-0.0514 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[55] Time spent = 4.45 s
+55: other/epoch_time  : 4.41
+55: other/speed       : 226.79
+55: score/best        : -0.05
+55: score/neg_loss    : -0.05
+55: train/grad_norm   [ 1000]: avg:   2.4129, min:   1.1209[ 567], max:   9.8965[   7]
+55: train/loss        [ 1000]: avg:   0.0613, min:   0.0410[ 444], max:   0.0877[ 400]
+Timer Info:
+| name     |   num |   t/call (ms) |   % |
+|----------+-------+---------------+-----|
+| sample   |  1000 |           0.7 |  37 |
+| train    |  1000 |           1.3 |  63 |
+| total(s) |     1 |           2   | 100 |
+epoch   56/100 | loss=0.061274 | val_loss=0.051911 | best=-0.0514 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[56] Time spent = 4.25 s
+56: other/epoch_time  : 4.21
+56: other/speed       : 237.52
+56: score/best        : -0.05
+56: score/neg_loss    : -0.05
+56: train/grad_norm   [ 1000]: avg:   2.4726, min:   1.0199[ 246], max:   8.8345[ 118]
+56: train/loss        [ 1000]: avg:   0.0613, min:   0.0433[ 514], max:   0.0873[  35]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.7 |  35.8 |
+| train    |  1000 |           1.3 |  64.2 |
+| total(s) |     1 |           2   | 100   |
+epoch   57/100 | loss=0.061301 | val_loss=0.051694 | best=-0.0514 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[57] Time spent = 4.66 s
+57: other/epoch_time  : 4.62
+57: other/speed       : 216.56
+57: score/best        : -0.05
+57: score/neg_loss    : -0.05
+57: train/grad_norm   [ 1000]: avg:   2.4369, min:   1.1457[  53], max:  11.4162[ 858]
+57: train/loss        [ 1000]: avg:   0.0608, min:   0.0423[ 527], max:   0.0798[  24]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.9 |  38.3 |
+| train    |  1000 |           1.4 |  61.7 |
+| total(s) |     1 |           2.2 | 100   |
+epoch   58/100 | loss=0.060759 | val_loss=0.053562 | best=-0.0514 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[58] Time spent = 4.63 s
+58: other/epoch_time  : 4.57
+58: other/speed       : 218.58
+58: score/best        : -0.05
+58: score/neg_loss    : -0.05
+58: train/grad_norm   [ 1000]: avg:   2.4161, min:   1.0572[ 638], max:  10.3885[  78]
+58: train/loss        [ 1000]: avg:   0.0608, min:   0.0426[ 439], max:   0.0785[ 193]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.8 |  38.1 |
+| train    |  1000 |           1.3 |  61.9 |
+| total(s) |     1 |           2.1 | 100   |
+epoch   59/100 | loss=0.060753 | val_loss=0.051245 | best=-0.0512 | saved=True
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[59] Time spent = 4.68 s
+59: other/epoch_time  : 4.65
+59: other/speed       : 215.10
+59: score/best        : -0.05
+59: score/neg_loss    : -0.05
+59: train/grad_norm   [ 1000]: avg:   2.5358, min:   1.2133[ 286], max:  12.7803[  51]
+59: train/loss        [ 1000]: avg:   0.0608, min:   0.0418[ 595], max:   0.0826[  62]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.8 |  38.4 |
+| train    |  1000 |           1.3 |  61.6 |
+| total(s) |     1 |           2.2 | 100   |
+epoch   60/100 | loss=0.060796 | val_loss=0.052825 | best=-0.0512 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[60] Time spent = 4.48 s
+60: other/epoch_time  : 4.46
+60: other/speed       : 224.34
+60: score/best        : -0.05
+60: score/neg_loss    : -0.05
+60: train/grad_norm   [ 1000]: avg:   2.5029, min:   1.0855[ 891], max:   9.8309[   5]
+60: train/loss        [ 1000]: avg:   0.0607, min:   0.0399[ 532], max:   0.0845[ 872]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.8 |  37.3 |
+| train    |  1000 |           1.3 |  62.7 |
+| total(s) |     1 |           2.1 | 100   |
+epoch   61/100 | loss=0.060654 | val_loss=0.052524 | best=-0.0512 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[61] Time spent = 4.53 s
+61: other/epoch_time  : 4.48
+61: other/speed       : 223.24
+61: score/best        : -0.05
+61: score/neg_loss    : -0.05
+61: train/grad_norm   [ 1000]: avg:   2.4303, min:   1.1256[ 189], max:   8.0588[ 632]
+61: train/loss        [ 1000]: avg:   0.0608, min:   0.0419[ 974], max:   0.0801[ 362]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.8 |  37.7 |
+| train    |  1000 |           1.3 |  62.3 |
+| total(s) |     1 |           2.1 | 100   |
+epoch   62/100 | loss=0.060817 | val_loss=0.049820 | best=-0.0498 | saved=True
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[62] Time spent = 4.24 s
+62: other/epoch_time  : 4.21
+62: other/speed       : 237.39
+62: score/best        : -0.05
+62: score/neg_loss    : -0.05
+62: train/grad_norm   [ 1000]: avg:   2.4735, min:   1.1525[ 961], max:   9.2565[ 765]
+62: train/loss        [ 1000]: avg:   0.0604, min:   0.0454[ 188], max:   0.0811[ 425]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.7 |  35.6 |
+| train    |  1000 |           1.2 |  64.4 |
+| total(s) |     1 |           1.9 | 100   |
+epoch   63/100 | loss=0.060389 | val_loss=0.049974 | best=-0.0498 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[63] Time spent = 4.25 s
+63: other/epoch_time  : 4.21
+63: other/speed       : 237.65
+63: score/best        : -0.05
+63: score/neg_loss    : -0.05
+63: train/grad_norm   [ 1000]: avg:   2.5365, min:   1.1409[ 990], max:  12.2293[ 786]
+63: train/loss        [ 1000]: avg:   0.0600, min:   0.0404[ 500], max:   0.0825[ 982]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.7 |  35.9 |
+| train    |  1000 |           1.2 |  64.1 |
+| total(s) |     1 |           1.9 | 100   |
+epoch   64/100 | loss=0.060048 | val_loss=0.048948 | best=-0.0489 | saved=True
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[64] Time spent = 4.24 s
+64: other/epoch_time  : 4.20
+64: other/speed       : 238.29
+64: score/best        : -0.05
+64: score/neg_loss    : -0.05
+64: train/grad_norm   [ 1000]: avg:   2.5626, min:   1.0837[ 632], max:   9.5035[ 118]
+64: train/loss        [ 1000]: avg:   0.0599, min:   0.0438[ 784], max:   0.0834[ 960]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.7 |  35.6 |
+| train    |  1000 |           1.2 |  64.4 |
+| total(s) |     1 |           1.9 | 100   |
+epoch   65/100 | loss=0.059880 | val_loss=0.052558 | best=-0.0489 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[65] Time spent = 4.14 s
+65: other/epoch_time  : 4.09
+65: other/speed       : 244.24
+65: score/best        : -0.05
+65: score/neg_loss    : -0.05
+65: train/grad_norm   [ 1000]: avg:   2.5470, min:   1.1165[ 460], max:   8.3727[ 857]
+65: train/loss        [ 1000]: avg:   0.0597, min:   0.0400[ 849], max:   0.0865[ 419]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.7 |  35.3 |
+| train    |  1000 |           1.2 |  64.7 |
+| total(s) |     1 |           1.9 | 100   |
+epoch   66/100 | loss=0.059712 | val_loss=0.050968 | best=-0.0489 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[66] Time spent = 4.17 s
+66: other/epoch_time  : 4.13
+66: other/speed       : 242.23
+66: score/best        : -0.05
+66: score/neg_loss    : -0.05
+66: train/grad_norm   [ 1000]: avg:   2.5459, min:   1.0219[ 173], max:   9.7132[ 220]
+66: train/loss        [ 1000]: avg:   0.0597, min:   0.0435[ 928], max:   0.0855[ 255]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.7 |  35.9 |
+| train    |  1000 |           1.2 |  64.1 |
+| total(s) |     1 |           1.9 | 100   |
+epoch   67/100 | loss=0.059680 | val_loss=0.049772 | best=-0.0489 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[67] Time spent = 4.19 s
+67: other/epoch_time  : 4.16
+67: other/speed       : 240.55
+67: score/best        : -0.05
+67: score/neg_loss    : -0.05
+67: train/grad_norm   [ 1000]: avg:   2.5055, min:   1.2184[ 157], max:   7.2488[ 226]
+67: train/loss        [ 1000]: avg:   0.0595, min:   0.0428[ 756], max:   0.0810[   4]
+Timer Info:
+| name     |   num |   t/call (ms) |   % |
+|----------+-------+---------------+-----|
+| sample   |  1000 |           0.7 |  36 |
+| train    |  1000 |           1.2 |  64 |
+| total(s) |     1 |           1.9 | 100 |
+epoch   68/100 | loss=0.059481 | val_loss=0.048699 | best=-0.0487 | saved=True
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[68] Time spent = 4.18 s
+68: other/epoch_time  : 4.14
+68: other/speed       : 241.42
+68: score/best        : -0.05
+68: score/neg_loss    : -0.05
+68: train/grad_norm   [ 1000]: avg:   2.5690, min:   1.1918[ 316], max:   7.6191[ 987]
+68: train/loss        [ 1000]: avg:   0.0601, min:   0.0412[  42], max:   0.0840[ 372]
+Timer Info:
+| name     |   num |   t/call (ms) |   % |
+|----------+-------+---------------+-----|
+| sample   |  1000 |           0.7 |  36 |
+| train    |  1000 |           1.2 |  64 |
+| total(s) |     1 |           1.9 | 100 |
+epoch   69/100 | loss=0.060073 | val_loss=0.050805 | best=-0.0487 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[69] Time spent = 4.87 s
+69: other/epoch_time  : 4.82
+69: other/speed       : 207.44
+69: score/best        : -0.05
+69: score/neg_loss    : -0.05
+69: train/grad_norm   [ 1000]: avg:   2.6460, min:   1.2392[ 238], max:   8.8014[ 551]
+69: train/loss        [ 1000]: avg:   0.0595, min:   0.0409[ 716], max:   0.0791[ 759]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.9 |  39.5 |
+| train    |  1000 |           1.4 |  60.5 |
+| total(s) |     1 |           2.3 | 100   |
+epoch   70/100 | loss=0.059505 | val_loss=0.049266 | best=-0.0487 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[70] Time spent = 5.19 s
+70: other/epoch_time  : 5.14
+70: other/speed       : 194.68
+70: score/best        : -0.05
+70: score/neg_loss    : -0.05
+70: train/grad_norm   [ 1000]: avg:   2.5878, min:   1.0803[ 647], max:  13.0682[ 817]
+70: train/loss        [ 1000]: avg:   0.0595, min:   0.0405[ 727], max:   0.0829[  48]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           1   |  41.5 |
+| train    |  1000 |           1.4 |  58.5 |
+| total(s) |     1 |           2.5 | 100   |
+epoch   71/100 | loss=0.059530 | val_loss=0.047139 | best=-0.0471 | saved=True
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[71] Time spent = 5.17 s
+71: other/epoch_time  : 5.11
+71: other/speed       : 195.62
+71: score/best        : -0.05
+71: score/neg_loss    : -0.05
+71: train/grad_norm   [ 1000]: avg:   2.6297, min:   1.2134[ 701], max:  13.8668[ 453]
+71: train/loss        [ 1000]: avg:   0.0596, min:   0.0406[ 985], max:   0.0802[ 240]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           1   |  41.3 |
+| train    |  1000 |           1.4 |  58.7 |
+| total(s) |     1 |           2.4 | 100   |
+epoch   72/100 | loss=0.059605 | val_loss=0.047344 | best=-0.0471 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[72] Time spent = 5.18 s
+72: other/epoch_time  : 5.13
+72: other/speed       : 194.93
+72: score/best        : -0.05
+72: score/neg_loss    : -0.05
+72: train/grad_norm   [ 1000]: avg:   2.6555, min:   1.2047[ 462], max:  11.2513[ 425]
+72: train/loss        [ 1000]: avg:   0.0588, min:   0.0405[ 858], max:   0.0793[ 276]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           1   |  41.3 |
+| train    |  1000 |           1.4 |  58.7 |
+| total(s) |     1 |           2.4 | 100   |
+epoch   73/100 | loss=0.058823 | val_loss=0.047119 | best=-0.0471 | saved=True
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[73] Time spent = 5.16 s
+73: other/epoch_time  : 5.11
+73: other/speed       : 195.77
+73: score/best        : -0.05
+73: score/neg_loss    : -0.05
+73: train/grad_norm   [ 1000]: avg:   2.6188, min:   1.2799[ 553], max:  12.0678[ 447]
+73: train/loss        [ 1000]: avg:   0.0591, min:   0.0428[ 429], max:   0.0774[  42]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           1   |  41.5 |
+| train    |  1000 |           1.4 |  58.5 |
+| total(s) |     1 |           2.5 | 100   |
+epoch   74/100 | loss=0.059101 | val_loss=0.050062 | best=-0.0471 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[74] Time spent = 5.12 s
+74: other/epoch_time  : 5.08
+74: other/speed       : 196.74
+74: score/best        : -0.05
+74: score/neg_loss    : -0.05
+74: train/grad_norm   [ 1000]: avg:   2.7179, min:   1.3437[ 120], max:  12.1051[ 914]
+74: train/loss        [ 1000]: avg:   0.0590, min:   0.0399[ 140], max:   0.0804[ 726]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           1   |  41.1 |
+| train    |  1000 |           1.4 |  58.9 |
+| total(s) |     1 |           2.4 | 100   |
+epoch   75/100 | loss=0.058970 | val_loss=0.053547 | best=-0.0471 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[75] Time spent = 4.63 s
+75: other/epoch_time  : 4.60
+75: other/speed       : 217.49
+75: score/best        : -0.05
+75: score/neg_loss    : -0.05
+75: train/grad_norm   [ 1000]: avg:   2.7705, min:   1.1990[  18], max:  13.2994[ 345]
+75: train/loss        [ 1000]: avg:   0.0594, min:   0.0390[ 428], max:   0.0785[ 716]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.8 |  37.9 |
+| train    |  1000 |           1.3 |  62.1 |
+| total(s) |     1 |           2.2 | 100   |
+epoch   76/100 | loss=0.059371 | val_loss=0.049162 | best=-0.0471 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[76] Time spent = 4.50 s
+76: other/epoch_time  : 4.45
+76: other/speed       : 224.61
+76: score/best        : -0.05
+76: score/neg_loss    : -0.05
+76: train/grad_norm   [ 1000]: avg:   2.7390, min:   1.1658[ 687], max:   9.1835[ 341]
+76: train/loss        [ 1000]: avg:   0.0587, min:   0.0391[ 700], max:   0.0847[ 644]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.8 |  38.1 |
+| train    |  1000 |           1.3 |  61.9 |
+| total(s) |     1 |           2.1 | 100   |
+epoch   77/100 | loss=0.058658 | val_loss=0.046513 | best=-0.0465 | saved=True
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[77] Time spent = 4.77 s
+77: other/epoch_time  : 4.74
+77: other/speed       : 210.75
+77: score/best        : -0.05
+77: score/neg_loss    : -0.05
+77: train/grad_norm   [ 1000]: avg:   2.7283, min:   1.2854[ 880], max:  11.7466[ 756]
+77: train/loss        [ 1000]: avg:   0.0589, min:   0.0382[ 646], max:   0.0794[ 923]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.9 |  38.8 |
+| train    |  1000 |           1.4 |  61.2 |
+| total(s) |     1 |           2.2 | 100   |
+epoch   78/100 | loss=0.058872 | val_loss=0.049655 | best=-0.0465 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[78] Time spent = 4.17 s
+78: other/epoch_time  : 4.13
+78: other/speed       : 242.13
+78: score/best        : -0.05
+78: score/neg_loss    : -0.05
+78: train/grad_norm   [ 1000]: avg:   2.6866, min:   1.2595[ 609], max:  11.0814[  54]
+78: train/loss        [ 1000]: avg:   0.0585, min:   0.0365[  44], max:   0.0824[ 908]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.7 |  37.4 |
+| train    |  1000 |           1.2 |  62.6 |
+| total(s) |     1 |           1.9 | 100   |
+epoch   79/100 | loss=0.058498 | val_loss=0.047015 | best=-0.0465 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[79] Time spent = 4.55 s
+79: other/epoch_time  : 4.50
+79: other/speed       : 222.16
+79: score/best        : -0.05
+79: score/neg_loss    : -0.05
+79: train/grad_norm   [ 1000]: avg:   2.6379, min:   1.2800[ 762], max:  10.4969[  68]
+79: train/loss        [ 1000]: avg:   0.0582, min:   0.0361[ 832], max:   0.0761[ 668]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.8 |  38.2 |
+| train    |  1000 |           1.3 |  61.8 |
+| total(s) |     1 |           2.1 | 100   |
+epoch   80/100 | loss=0.058227 | val_loss=0.047775 | best=-0.0465 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[80] Time spent = 4.27 s
+80: other/epoch_time  : 4.25
+80: other/speed       : 235.31
+80: score/best        : -0.05
+80: score/neg_loss    : -0.05
+80: train/grad_norm   [ 1000]: avg:   2.8020, min:   1.2886[ 485], max:   9.9119[   4]
+80: train/loss        [ 1000]: avg:   0.0586, min:   0.0401[ 881], max:   0.0797[ 182]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.7 |  37.1 |
+| train    |  1000 |           1.2 |  62.9 |
+| total(s) |     1 |           2   | 100   |
+epoch   81/100 | loss=0.058566 | val_loss=0.046784 | best=-0.0465 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[81] Time spent = 4.19 s
+81: other/epoch_time  : 4.13
+81: other/speed       : 241.89
+81: score/best        : -0.05
+81: score/neg_loss    : -0.05
+81: train/grad_norm   [ 1000]: avg:   2.7475, min:   1.2809[ 696], max:   9.5491[ 652]
+81: train/loss        [ 1000]: avg:   0.0584, min:   0.0387[ 461], max:   0.0830[ 774]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.7 |  36.4 |
+| train    |  1000 |           1.2 |  63.6 |
+| total(s) |     1 |           1.9 | 100   |
+epoch   82/100 | loss=0.058432 | val_loss=0.047107 | best=-0.0465 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[82] Time spent = 5.06 s
+82: other/epoch_time  : 5.01
+82: other/speed       : 199.60
+82: score/best        : -0.05
+82: score/neg_loss    : -0.05
+82: train/grad_norm   [ 1000]: avg:   2.7906, min:   1.3399[ 776], max:   9.4020[ 723]
+82: train/loss        [ 1000]: avg:   0.0584, min:   0.0419[ 852], max:   0.0814[ 237]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.9 |  41.5 |
+| train    |  1000 |           1.3 |  58.5 |
+| total(s) |     1 |           2.3 | 100   |
+epoch   83/100 | loss=0.058404 | val_loss=0.045005 | best=-0.0450 | saved=True
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[83] Time spent = 5.17 s
+83: other/epoch_time  : 5.12
+83: other/speed       : 195.38
+83: score/best        : -0.05
+83: score/neg_loss    : -0.05
+83: train/grad_norm   [ 1000]: avg:   2.7504, min:   1.2511[ 322], max:  10.0005[  26]
+83: train/loss        [ 1000]: avg:   0.0580, min:   0.0402[ 594], max:   0.0814[ 845]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           1   |  41.7 |
+| train    |  1000 |           1.4 |  58.3 |
+| total(s) |     1 |           2.4 | 100   |
+epoch   84/100 | loss=0.057954 | val_loss=0.046199 | best=-0.0450 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[84] Time spent = 5.17 s
+84: other/epoch_time  : 5.12
+84: other/speed       : 195.39
+84: score/best        : -0.05
+84: score/neg_loss    : -0.05
+84: train/grad_norm   [ 1000]: avg:   2.8794, min:   1.3589[ 260], max:  10.5686[  23]
+84: train/loss        [ 1000]: avg:   0.0580, min:   0.0423[ 667], max:   0.0761[ 795]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           1   |  41.5 |
+| train    |  1000 |           1.4 |  58.5 |
+| total(s) |     1 |           2.4 | 100   |
+epoch   85/100 | loss=0.057951 | val_loss=0.046958 | best=-0.0450 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[85] Time spent = 5.24 s
+85: other/epoch_time  : 5.19
+85: other/speed       : 192.56
+85: score/best        : -0.05
+85: score/neg_loss    : -0.05
+85: train/grad_norm   [ 1000]: avg:   2.7802, min:   1.3612[  39], max:  11.1213[ 490]
+85: train/loss        [ 1000]: avg:   0.0580, min:   0.0411[ 497], max:   0.0767[ 747]
+Timer Info:
+| name     |   num |   t/call (ms) |   % |
+|----------+-------+---------------+-----|
+| sample   |  1000 |           1   |  42 |
+| train    |  1000 |           1.4 |  58 |
+| total(s) |     1 |           2.4 | 100 |
+epoch   86/100 | loss=0.058044 | val_loss=0.046916 | best=-0.0450 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[86] Time spent = 5.20 s
+86: other/epoch_time  : 5.15
+86: other/speed       : 194.26
+86: score/best        : -0.05
+86: score/neg_loss    : -0.05
+86: train/grad_norm   [ 1000]: avg:   2.8550, min:   1.1553[  23], max:  14.2425[  75]
+86: train/loss        [ 1000]: avg:   0.0576, min:   0.0391[ 685], max:   0.0799[ 253]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           1   |  41.5 |
+| train    |  1000 |           1.4 |  58.5 |
+| total(s) |     1 |           2.4 | 100   |
+epoch   87/100 | loss=0.057578 | val_loss=0.045848 | best=-0.0450 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[87] Time spent = 5.27 s
+87: other/epoch_time  : 5.21
+87: other/speed       : 191.88
+87: score/best        : -0.04
+87: score/neg_loss    : -0.04
+87: train/grad_norm   [ 1000]: avg:   2.7880, min:   1.3645[ 613], max:  14.0824[ 294]
+87: train/loss        [ 1000]: avg:   0.0575, min:   0.0378[  19], max:   0.0780[ 153]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           1   |  42.2 |
+| train    |  1000 |           1.4 |  57.8 |
+| total(s) |     1 |           2.5 | 100   |
+epoch   88/100 | loss=0.057474 | val_loss=0.044314 | best=-0.0443 | saved=True
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[88] Time spent = 5.25 s
+88: other/epoch_time  : 5.20
+88: other/speed       : 192.32
+88: score/best        : -0.04
+88: score/neg_loss    : -0.05
+88: train/grad_norm   [ 1000]: avg:   2.8700, min:   1.2522[ 466], max:  12.6907[ 951]
+88: train/loss        [ 1000]: avg:   0.0580, min:   0.0333[ 734], max:   0.0801[ 264]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           1.1 |  42.5 |
+| train    |  1000 |           1.4 |  57.5 |
+| total(s) |     1 |           2.5 | 100   |
+epoch   89/100 | loss=0.057960 | val_loss=0.047870 | best=-0.0443 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[89] Time spent = 5.31 s
+89: other/epoch_time  : 5.25
+89: other/speed       : 190.37
+89: score/best        : -0.04
+89: score/neg_loss    : -0.05
+89: train/grad_norm   [ 1000]: avg:   2.8538, min:   1.2850[ 600], max:  13.0387[ 253]
+89: train/loss        [ 1000]: avg:   0.0574, min:   0.0410[ 638], max:   0.0786[ 248]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           1.1 |  42.3 |
+| train    |  1000 |           1.4 |  57.7 |
+| total(s) |     1 |           2.5 | 100   |
+epoch   90/100 | loss=0.057412 | val_loss=0.046497 | best=-0.0443 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[90] Time spent = 5.22 s
+90: other/epoch_time  : 5.17
+90: other/speed       : 193.38
+90: score/best        : -0.04
+90: score/neg_loss    : -0.05
+90: train/grad_norm   [ 1000]: avg:   2.8685, min:   1.2302[ 129], max:  12.9643[ 895]
+90: train/loss        [ 1000]: avg:   0.0574, min:   0.0412[ 936], max:   0.0749[ 505]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           1   |  41.9 |
+| train    |  1000 |           1.4 |  58.1 |
+| total(s) |     1 |           2.5 | 100   |
+epoch   91/100 | loss=0.057441 | val_loss=0.046633 | best=-0.0443 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[91] Time spent = 5.22 s
+91: other/epoch_time  : 5.17
+91: other/speed       : 193.31
+91: score/best        : -0.04
+91: score/neg_loss    : -0.05
+91: train/grad_norm   [ 1000]: avg:   2.8003, min:   1.3423[ 934], max:  12.3958[ 296]
+91: train/loss        [ 1000]: avg:   0.0569, min:   0.0380[ 760], max:   0.0761[ 894]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           1   |  42.1 |
+| train    |  1000 |           1.4 |  57.9 |
+| total(s) |     1 |           2.5 | 100   |
+epoch   92/100 | loss=0.056905 | val_loss=0.046359 | best=-0.0443 | saved=False
+Mem info: used: 2.744 GB, avail: 12.344 GB, total: 15.461 GB
+[92] Time spent = 5.23 s
+92: other/epoch_time  : 5.18
+92: other/speed       : 193.06
+92: score/best        : -0.04
+92: score/neg_loss    : -0.05
+92: train/grad_norm   [ 1000]: avg:   2.8631, min:   1.3633[ 719], max:   9.8481[ 922]
+92: train/loss        [ 1000]: avg:   0.0570, min:   0.0408[ 860], max:   0.0747[ 886]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           1   |  41.7 |
+| train    |  1000 |           1.4 |  58.3 |
+| total(s) |     1 |           2.5 | 100   |
+epoch   93/100 | loss=0.056982 | val_loss=0.046172 | best=-0.0443 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[93] Time spent = 5.10 s
+93: other/epoch_time  : 5.06
+93: other/speed       : 197.59
+93: score/best        : -0.04
+93: score/neg_loss    : -0.05
+93: train/grad_norm   [ 1000]: avg:   2.8316, min:   1.3507[ 663], max:  10.4921[ 854]
+93: train/loss        [ 1000]: avg:   0.0568, min:   0.0414[ 564], max:   0.0775[ 144]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           1   |  40.6 |
+| train    |  1000 |           1.4 |  59.4 |
+| total(s) |     1 |           2.4 | 100   |
+epoch   94/100 | loss=0.056836 | val_loss=0.047937 | best=-0.0443 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[94] Time spent = 5.01 s
+94: other/epoch_time  : 4.96
+94: other/speed       : 201.49
+94: score/best        : -0.04
+94: score/neg_loss    : -0.05
+94: train/grad_norm   [ 1000]: avg:   2.8505, min:   1.1950[ 848], max:  14.1441[  59]
+94: train/loss        [ 1000]: avg:   0.0568, min:   0.0374[ 529], max:   0.0759[ 180]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.9 |  39.9 |
+| train    |  1000 |           1.4 |  60.1 |
+| total(s) |     1 |           2.3 | 100   |
+epoch   95/100 | loss=0.056820 | val_loss=0.046123 | best=-0.0443 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+Saved model to exps/bc_isaac/run1/model0.pt
+[95] Time spent = 5.08 s
+95: other/epoch_time  : 5.02
+95: other/speed       : 199.01
+95: score/best        : -0.04
+95: score/neg_loss    : -0.04
+95: train/grad_norm   [ 1000]: avg:   2.9316, min:   1.3009[  77], max:   9.9195[   2]
+95: train/loss        [ 1000]: avg:   0.0570, min:   0.0420[ 225], max:   0.0812[ 159]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           1   |  40.6 |
+| train    |  1000 |           1.4 |  59.4 |
+| total(s) |     1 |           2.4 | 100   |
+epoch   96/100 | loss=0.057046 | val_loss=0.043905 | best=-0.0439 | saved=True
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[96] Time spent = 5.10 s
+96: other/epoch_time  : 5.05
+96: other/speed       : 198.10
+96: score/best        : -0.04
+96: score/neg_loss    : -0.05
+96: train/grad_norm   [ 1000]: avg:   2.9503, min:   1.2708[ 725], max:  14.7324[ 644]
+96: train/loss        [ 1000]: avg:   0.0566, min:   0.0376[ 892], max:   0.0766[ 885]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           1   |  40.8 |
+| train    |  1000 |           1.4 |  59.2 |
+| total(s) |     1 |           2.4 | 100   |
+epoch   97/100 | loss=0.056608 | val_loss=0.045735 | best=-0.0439 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[97] Time spent = 4.97 s
+97: other/epoch_time  : 4.92
+97: other/speed       : 203.12
+97: score/best        : -0.04
+97: score/neg_loss    : -0.05
+97: train/grad_norm   [ 1000]: avg:   2.9244, min:   1.1681[ 270], max:  18.1544[ 462]
+97: train/loss        [ 1000]: avg:   0.0568, min:   0.0402[ 580], max:   0.0786[ 868]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.9 |  39.6 |
+| train    |  1000 |           1.4 |  60.4 |
+| total(s) |     1 |           2.3 | 100   |
+epoch   98/100 | loss=0.056775 | val_loss=0.045415 | best=-0.0439 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[98] Time spent = 4.95 s
+98: other/epoch_time  : 4.90
+98: other/speed       : 203.90
+98: score/best        : -0.04
+98: score/neg_loss    : -0.05
+98: train/grad_norm   [ 1000]: avg:   2.9856, min:   1.2354[ 934], max:  15.3903[ 313]
+98: train/loss        [ 1000]: avg:   0.0572, min:   0.0392[ 988], max:   0.0797[  55]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.9 |  39.4 |
+| train    |  1000 |           1.4 |  60.6 |
+| total(s) |     1 |           2.3 | 100   |
+epoch   99/100 | loss=0.057157 | val_loss=0.046701 | best=-0.0439 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+[99] Time spent = 4.93 s
+99: other/epoch_time  : 4.90
+99: other/speed       : 204.28
+99: score/best        : -0.04
+99: score/neg_loss    : -0.05
+99: train/grad_norm   [ 1000]: avg:   2.9657, min:   1.3636[ 522], max:  11.6573[ 683]
+99: train/loss        [ 1000]: avg:   0.0567, min:   0.0397[ 698], max:   0.0759[ 463]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           0.9 |  38.6 |
+| train    |  1000 |           1.4 |  61.4 |
+| total(s) |     1 |           2.3 | 100   |
+epoch  100/100 | loss=0.056717 | val_loss=0.045930 | best=-0.0439 | saved=False
+Mem info: used: 2.744 GB, avail: 12.345 GB, total: 15.461 GB
+===final evaluation (best checkpoint)===
+retuning the best model exps/bc_isaac/run1/model0.pt with score 0.0439054174348712
+Final val loss (best ckpt): 0.046423
+[100] Time spent = 0.09 s
+100: score/final_val_loss  : 0.05
+Training complete.  Checkpoints in: exps/bc_isaac/run1

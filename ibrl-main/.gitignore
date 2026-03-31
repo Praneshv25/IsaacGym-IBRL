@@ -1,6 +1,5 @@
 __pycache__/
 .ipynb_checkpoints/
-exps
 common_utils/build/
 .vscode
 wandb

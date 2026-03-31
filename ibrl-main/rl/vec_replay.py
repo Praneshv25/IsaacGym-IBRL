@@ -35,7 +35,7 @@ same shape as live-env transitions.  The RL will learn the socket part
 from live interaction.
 """
 
-from __future__ import annotations
+# from __future__ import annotations
 
 import glob
 import os

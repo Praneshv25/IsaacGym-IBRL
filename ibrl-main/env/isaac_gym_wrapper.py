@@ -17,7 +17,7 @@ can feed it straight into the next episode's trajectory without any
 extra book-keeping.
 """
 
-from __future__ import annotations
+# from __future__ import annotations
 
 import os
 import sys

@@ -49,7 +49,7 @@ loaded and their transitions are merged into one flat dataset::
     dataset.num_episodes  # total episodes across all files
 """
 
-from __future__ import annotations
+# from __future__ import annotations
 
 import glob
 import os
