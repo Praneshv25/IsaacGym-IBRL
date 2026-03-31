@@ -33,6 +33,15 @@ Usage
         --eval_with_env 1 \\
         --isaacgym_envs_path ../manifeel-isaacgymenvs-tacsl-manifeel-rl \\
         --save_dir exps/bc_isaac/run1
+
+    # sequential training on data shards (folder of ``*.pkl`` per shard)
+    # Shard 1: train and note ``model0.pt`` and ``action_scale.pt`` under save_dir.
+    # Shard 2+: warm-start weights and reuse the *first* shard's action scale.
+    python train_bc_isaac.py \\
+        --dataset.path /path/to/shard2 \\
+        --dataset.action_scale_path exps/bc_isaac/shard1/action_scale.pt \\
+        --init_checkpoint exps/bc_isaac/shard1/model0.pt \\
+        --save_dir exps/bc_isaac/shard2
 """
 
 #from __future__ import annotations
@@ -82,6 +91,11 @@ class MainConfig(common_utils.RunConfig):
     lr: float = 1e-4
     grad_clip: float = 5.0
     weight_decay: float = 0.0
+
+    # Warm-start from a prior BC run (sequential shards). Path to a ``.pt``
+    # checkpoint (e.g. ``.../model0.pt``). Must match architecture: 14-D state,
+    # 7-D action, same ``policy`` settings. Empty or ``none`` = train from scratch.
+    init_checkpoint: str = ""
 
     # ── live-env evaluation (optional, requires IsaacGym + GPU) ──────────────
     # Set eval_with_env=1 to run success-rate evaluation after each epoch.
@@ -217,6 +231,15 @@ class Workspace:
         self.policy = self.policy.to("cuda" if torch.cuda.is_available() else "cpu")
         print(self.policy)
         common_utils.count_parameters(self.policy)
+
+        ic = (cfg.init_checkpoint or "").strip()
+        if ic and ic.lower() != "none":
+            if not os.path.isfile(ic):
+                raise FileNotFoundError(f"init_checkpoint not found: {ic}")
+            device = next(self.policy.parameters()).device
+            state = torch.load(ic, map_location=device)
+            self.policy.load_state_dict(state, strict=True)
+            print(common_utils.wrap_ruler(f"loaded init_checkpoint: {ic}"))
 
         # ── optimiser ─────────────────────────────────────────────────────
         if cfg.weight_decay > 0:

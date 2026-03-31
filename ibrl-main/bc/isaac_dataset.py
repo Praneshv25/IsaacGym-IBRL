@@ -123,6 +123,14 @@ class IsaacDatasetConfig:
         ``IsaacPklDataset.action_scale`` so a downstream consumer can
         invert the normalisation if needed (e.g. to pass raw actions to
         the env).  Set to ``False`` to store raw un-normalised actions.
+    action_scale_path:
+        If non-empty, load per-dimension scales from this ``.pt`` file
+        (shape ``(7,)``) instead of computing max-abs from the current
+        data. Use for **sequential** training on multiple data folders with
+        ``normalize_actions=True``: pass the first run's
+        ``action_scale.pt`` so every shard uses the same normalisation as
+        the checkpoint you warm-start from. Requires ``normalize_actions``
+        to be ``True``.
     """
 
     path: str = ""
@@ -130,6 +138,7 @@ class IsaacDatasetConfig:
     max_len: int = -1
     use_default_socket_pad: bool = True
     normalize_actions: bool = True
+    action_scale_path: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -323,20 +332,48 @@ class IsaacPklDataset:
 
         if self.num_steps > 0:
             all_actions = torch.stack([e["action"] for e in self._entries])
+            scale_path = (cfg.action_scale_path or "").strip()
 
-            # Compute per-dim max-abs scale.  Clamp to ≥ 1.0 so dims that
-            # are already inside [-1, 1] (e.g. position) stay unchanged.
-            abs_max: torch.Tensor = all_actions.abs().max(dim=0).values.clamp(min=1.0)
-            self.action_scale = abs_max  # shape: (action_dim,)
+            if scale_path:
+                if not cfg.normalize_actions:
+                    raise ValueError(
+                        "action_scale_path is set but normalize_actions is False; "
+                        "enable normalize_actions or clear action_scale_path."
+                    )
+                if not os.path.isfile(scale_path):
+                    raise FileNotFoundError(
+                        f"action_scale_path does not exist: {scale_path}"
+                    )
+                loaded = torch.load(scale_path, map_location="cpu")
+                if not isinstance(loaded, torch.Tensor):
+                    loaded = torch.as_tensor(loaded, dtype=torch.float32)
+                else:
+                    loaded = loaded.to(dtype=torch.float32).clone()
+                if loaded.shape != (ACTION_DIM,):
+                    raise ValueError(
+                        f"action_scale must have shape ({ACTION_DIM},), "
+                        f"got {tuple(loaded.shape)}"
+                    )
+                self.action_scale = loaded
+            else:
+                # Compute per-dim max-abs scale.  Clamp to ≥ 1.0 so dims that
+                # are already inside [-1, 1] (e.g. position) stay unchanged.
+                abs_max: torch.Tensor = all_actions.abs().max(dim=0).values.clamp(
+                    min=1.0
+                )
+                self.action_scale = abs_max  # shape: (action_dim,)
 
             if cfg.normalize_actions:
                 # Normalise stored actions in-place: each dim → [-1, 1]
                 scale = self.action_scale  # (action_dim,)
                 for entry in self._entries:
                     entry["action"] = entry["action"] / scale
+                scale_tag = (
+                    f"loaded from {scale_path}" if scale_path else "data max-abs"
+                )
                 print(
                     f"  action normalisation : ENABLED\n"
-                    f"  action_scale         : "
+                    f"  action_scale ({scale_tag}) : "
                     f"{[f'{v:.4f}' for v in self.action_scale.tolist()]}"
                 )
             else:
