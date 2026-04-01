@@ -146,22 +146,22 @@ def make_tacsl_bulb_task(
     if extra_overrides:
         base_overrides = base_overrides + extra_overrides
 
+    # TacSLTaskBulb → TacSLEnvInsertion._get_env_yaml_params() calls
+    # ``hydra.compose`` again; GlobalHydra must still be active, so build the
+    # env *inside* this context (do not exit before ``TacSLTaskBulb.__init__``).
     with initialize_config_dir(config_dir=cfg_dir, version_base="1.1"):
         cfg = compose(config_name="config", overrides=base_overrides)
-
-    task_config: dict = omegaconf_to_dict(cfg.task)
-    # Ensure numEnvs is consistent
-    task_config["env"]["numEnvs"] = num_envs
-
-    env = TacSLTaskBulb(
-        cfg=task_config,
-        rl_device=rl_device,
-        sim_device=sim_device,
-        graphics_device_id=graphics_device_id,
-        headless=headless,
-        virtual_screen_capture=False,
-        force_render=False,
-    )
+        task_config: dict = omegaconf_to_dict(cfg.task)
+        task_config["env"]["numEnvs"] = num_envs
+        env = TacSLTaskBulb(
+            cfg=task_config,
+            rl_device=rl_device,
+            sim_device=sim_device,
+            graphics_device_id=graphics_device_id,
+            headless=headless,
+            virtual_screen_capture=False,
+            force_render=False,
+        )
     return env
 
 
