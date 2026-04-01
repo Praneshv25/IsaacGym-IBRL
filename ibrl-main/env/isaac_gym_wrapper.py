@@ -21,7 +21,7 @@ extra book-keeping.
 
 import os
 import sys
-from typing import Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import torch
 
@@ -30,7 +30,7 @@ import torch
 # ---------------------------------------------------------------------------
 
 # Keys in TacSLTaskBulb.obs_dict that we concatenate into the state vector
-OBS_KEYS: list[str] = ["ee_pos", "ee_quat", "socket_pos", "socket_quat"]
+OBS_KEYS: List[str] = ["ee_pos", "ee_quat", "socket_pos", "socket_quat"]
 
 STATE_DIM: int = 3 + 4 + 3 + 4  # = 14
 ACTION_DIM: int = 7  # 6-DoF delta + gripper
@@ -76,7 +76,7 @@ def make_tacsl_bulb_task(
     graphics_device_id: int,
     headless: bool,
     seed: int,
-    extra_overrides: Optional[list[str]] = None,
+    extra_overrides: Optional[List[str]] = None,
 ):
     """Compose the TacSLTaskBulb hydra config (cameras / tactile OFF) and
     directly instantiate the VecTask.
@@ -119,7 +119,7 @@ def make_tacsl_bulb_task(
     GlobalHydra.instance().clear()
 
     # Base overrides: disable every sensor so the env is pure state-based
-    base_overrides: list[str] = [
+    base_overrides: List[str] = [
         "task=TacSLTaskBulb",
         f"num_envs={num_envs}",
         f"seed={seed}",
@@ -219,7 +219,7 @@ class IsaacGymBulbEnv:
         headless: bool = True,
         seed: int = 0,
         env_reward_scale: float = 1.0,
-        extra_overrides: Optional[list[str]] = None,
+        extra_overrides: Optional[List[str]] = None,
     ) -> None:
         self.num_envs = num_envs
         self.device = rl_device
@@ -251,7 +251,7 @@ class IsaacGymBulbEnv:
     # Private helpers
     # ──────────────────────────────────────────────────────────────────────
 
-    def _obs_from_env(self) -> dict[str, torch.Tensor]:
+    def _obs_from_env(self) -> Dict[str, torch.Tensor]:
         """Read the current ``ig_env.obs_dict`` and return an IBRL obs dict.
 
         The 14-D state is built by concatenating the four keys in
@@ -284,7 +284,7 @@ class IsaacGymBulbEnv:
     # Public interface
     # ──────────────────────────────────────────────────────────────────────
 
-    def reset(self) -> dict[str, torch.Tensor]:
+    def reset(self) -> Dict[str, torch.Tensor]:
         """Reset **all** N environments and return their initial observations.
 
         Returns
@@ -305,7 +305,7 @@ class IsaacGymBulbEnv:
         self,
         actions: torch.Tensor,
     ) -> Tuple[
-        dict[str, torch.Tensor],
+        Dict[str, torch.Tensor],
         torch.Tensor,
         torch.Tensor,
         torch.Tensor,

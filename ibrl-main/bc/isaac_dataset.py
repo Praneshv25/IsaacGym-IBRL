@@ -55,8 +55,8 @@ import glob
 import os
 import pickle
 from collections import defaultdict, namedtuple
-from dataclasses import dataclass
-from typing import Dict, List
+from dataclasses import dataclass, field
+from typing import Dict, List, Tuple
 
 import numpy as np
 import torch
@@ -131,6 +131,13 @@ class IsaacDatasetConfig:
         ``action_scale.pt`` so every shard uses the same normalisation as
         the checkpoint you warm-start from. Requires ``normalize_actions``
         to be ``True``.
+    image_keys:
+        If non-empty, load RGB observations from ``tr["obs"][key]`` for each
+        transition and train with ``BcPolicy`` (CNN encoder + optional
+        proprio from padded state). Keys must exist in every transition
+        (e.g. ``["rgb"]`` or camera names used in your MarsLab export).
+        Images are stored as uint8 ``(C, H, W)``. Leave empty for
+        state-only ``StateBcPolicy`` training.
     """
 
     path: str = ""
@@ -139,6 +146,7 @@ class IsaacDatasetConfig:
     use_default_socket_pad: bool = True
     normalize_actions: bool = True
     action_scale_path: str = ""
+    image_keys: List[str] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -189,10 +197,53 @@ class IsaacPklDataset:
     # callers can always compute  raw_action = stored_action * action_scale
     # without branching.
     action_scale: torch.Tensor
+    use_images: bool
+    rl_cameras: List[str]
+    prop_shape: Tuple[int, ...]
 
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def pkl_image_to_chw_uint8(arr: object) -> torch.Tensor:
+        """Convert a numpy-like image from a pkl transition to uint8 ``(C, H, W)``.
+
+        MarsLab ``MarsLab Offline RL Feb Transitions.pkl`` (verified) stores
+        float32 **HWC** images in roughly ``[0, 1]`` (e.g. ``wrist``,
+        ``right_tactile_camera_taxim``); small-range tensors (e.g.
+        ``tactile_force_field_right``) are min–max stretched to ``[0, 255]``.
+        Integer arrays are clipped to ``uint8``.
+        """
+        x = np.asarray(arr)
+        while x.ndim > 3 and x.shape[0] == 1:
+            x = np.squeeze(x, axis=0)
+        if x.ndim != 3:
+            raise ValueError(f"image must be 3-D after squeezing batch dims, got {x.shape}")
+        if x.shape[-1] == 3:
+            hwc = x
+        elif x.shape[0] == 3:
+            hwc = np.transpose(x, (1, 2, 0))
+        else:
+            raise ValueError(
+                f"expected HWC (...x3) or CHW (3xHxW), got shape {tuple(x.shape)}"
+            )
+
+        if np.issubdtype(hwc.dtype, np.floating):
+            lo_f, hi_f = float(hwc.min()), float(hwc.max())
+            span = hi_f - lo_f
+            if span < 1e-6:
+                uint_hwc = np.zeros(hwc.shape, dtype=np.uint8)
+            elif hi_f <= 1.01 and lo_f >= -0.05:
+                uint_hwc = (np.clip(hwc, 0.0, 1.0) * 255.0).round().astype(np.uint8)
+            else:
+                y = (hwc - lo_f) / (span + 1e-8) * 255.0
+                uint_hwc = np.clip(y, 0, 255).round().astype(np.uint8)
+        else:
+            uint_hwc = np.clip(hwc, 0, 255).astype(np.uint8)
+
+        chw = np.transpose(uint_hwc, (2, 0, 1))
+        return torch.from_numpy(np.ascontiguousarray(chw))
 
     @staticmethod
     def _resolve_pkl_files(path: str) -> List[str]:
@@ -264,10 +315,13 @@ class IsaacPklDataset:
             ep_ids = ep_ids[: cfg.max_episodes]
 
         # ── build flat entry list ─────────────────────────────────────────
-        self._entries: List[Dict[str, torch.Tensor]] = []
+        self._entries = []
         episode_lens: List[int] = []
         num_success_transitions = 0
         num_success_episodes = 0
+
+        image_keys = [str(k).strip() for k in cfg.image_keys if str(k).strip()]
+        printed_obs_keys = False
 
         for ep_id in ep_ids:
             transitions = sorted(eps_raw[ep_id], key=lambda t: t["timestep"])
@@ -290,12 +344,30 @@ class IsaacPklDataset:
                 action_np = action_np.squeeze()  # (7,)
                 action_t = torch.from_numpy(action_np)
 
-                self._entries.append(
-                    {
-                        "state": state_14d,  # (14,)
-                        "action": action_t,  # (7,)
+                if image_keys:
+                    odict = tr["obs"]
+                    if not printed_obs_keys:
+                        print(f"  obs keys (sample transition): {list(odict.keys())}")
+                        printed_obs_keys = True
+                    entry: Dict[str, torch.Tensor] = {
+                        "prop": state_14d,
+                        "action": action_t,
                     }
-                )
+                    for ik in image_keys:
+                        if ik not in odict:
+                            raise KeyError(
+                                f"dataset.image_keys includes '{ik}' but transition "
+                                f"obs has keys {list(odict.keys())}"
+                            )
+                        entry[ik] = self.pkl_image_to_chw_uint8(odict[ik])
+                    self._entries.append(entry)
+                else:
+                    self._entries.append(
+                        {
+                            "state": state_14d,  # (14,)
+                            "action": action_t,  # (7,)
+                        }
+                    )
                 ep_len += 1
 
                 if bool(np.asarray(tr["success"]).squeeze()):
@@ -308,7 +380,27 @@ class IsaacPklDataset:
                     num_success_episodes += 1
 
         # ── shape / dim metadata ──────────────────────────────────────────
-        self.obs_shape = (LIVE_STATE_DIM,)
+        self.use_images = len(image_keys) > 0
+        if self.use_images:
+            self.rl_cameras = list(image_keys)
+            ref0 = self._entries[0]
+            ref = ref0[self.rl_cameras[0]]
+            c, h, w = int(ref.shape[0]), int(ref.shape[1]), int(ref.shape[2])
+            self.obs_shape = (c, h, w)
+            self.prop_shape = (LIVE_STATE_DIM,)
+            for k in self.rl_cameras:
+                t = ref0[k]
+                if tuple(t.shape) != (c, h, w):
+                    raise ValueError(
+                        f"image shape for camera '{k}' {tuple(t.shape)} "
+                        f"!= reference {(c, h, w)}"
+                    )
+            print(f"  vision mode        : rl_cameras={self.rl_cameras}, obs_shape={self.obs_shape}")
+        else:
+            self.rl_cameras = []
+            self.obs_shape = (LIVE_STATE_DIM,)
+            self.prop_shape = (LIVE_STATE_DIM,)
+
         self.action_dim = ACTION_DIM
         self.num_steps = len(self._entries)
         self.num_episodes = len(episode_lens)
@@ -441,11 +533,20 @@ class IsaacPklDataset:
         replace = len(self._entries) < batchsize
         indices = np.random.choice(len(self._entries), batchsize, replace=replace)
 
-        states = torch.stack([self._entries[i]["state"] for i in indices]).to(device)
         actions = torch.stack([self._entries[i]["action"] for i in indices]).to(device)
-
-        obs = {"state": states, "prop": states}
         action = {"action": actions}
+
+        if self.use_images:
+            props = torch.stack([self._entries[i]["prop"] for i in indices]).to(device)
+            obs: Dict[str, torch.Tensor] = {"prop": props}
+            for cam in self.rl_cameras:
+                obs[cam] = torch.stack(
+                    [self._entries[i][cam] for i in indices]
+                ).to(device)
+        else:
+            states = torch.stack([self._entries[i]["state"] for i in indices]).to(device)
+            obs = {"state": states, "prop": states}
+
         return Batch(obs=obs, action=action)
 
     # ──────────────────────────────────────────────────────────────────────
@@ -456,10 +557,11 @@ class IsaacPklDataset:
         return self.num_steps
 
     def __repr__(self) -> str:
+        vis = f", vision={self.rl_cameras}" if self.use_images else ""
         return (
             f"IsaacPklDataset("
             f"episodes={self.num_episodes}, "
             f"steps={self.num_steps}, "
-            f"obs_shape={self.obs_shape}, "
+            f"obs_shape={self.obs_shape}{vis}, "
             f"action_dim={self.action_dim})"
         )

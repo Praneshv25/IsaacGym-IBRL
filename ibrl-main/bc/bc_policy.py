@@ -1,5 +1,6 @@
 # from __future__ import annotations
 from dataclasses import dataclass, field
+from typing import Dict
 
 import torch
 import torch.nn as nn
@@ -71,12 +72,12 @@ class BcPolicy(nn.Module):
         if self.cfg.orth_init:
             self.policy.apply(utils.orth_weight_init)
 
-    def forward(self, obs: dict[str, torch.Tensor]):
+    def forward(self, obs: Dict[str, torch.Tensor]):
         h = self.encoder(obs)
         mu = self.policy(h)  # policy contains tanh
         return mu
 
-    def act(self, obs: dict[str, torch.Tensor], *, eval_mode=True, cpu=True):
+    def act(self, obs: Dict[str, torch.Tensor], *, eval_mode=True, cpu=True):
         assert eval_mode
         assert not self.training
 
@@ -141,11 +142,11 @@ class StateBcPolicy(nn.Module):
         layers.append(nn.Tanh())
         self.net = nn.Sequential(*layers)
 
-    def forward(self, obs: dict[str, torch.Tensor]):
+    def forward(self, obs: Dict[str, torch.Tensor]):
         mu = self.net(obs["state"])
         return mu
 
-    def act(self, obs: dict[str, torch.Tensor], *, eval_mode=True, cpu=True, **kwargs):
+    def act(self, obs: Dict[str, torch.Tensor], *, eval_mode=True, cpu=True, **kwargs):
         assert eval_mode
         assert not self.training
         state = obs["state"]
