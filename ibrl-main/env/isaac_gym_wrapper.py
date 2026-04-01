@@ -123,8 +123,13 @@ def make_tacsl_bulb_task(
     GlobalHydra.instance().clear()
 
     # Base overrides: disable every sensor so the env is pure state-based
+    # ``config.yaml`` defaults to ``train=${task}PPO`` → ``TacSLTaskBulbPPO``,
+    # which is not shipped in manifeel-isaacgymenvs-tacsl; use the bundled
+    # bulb train config instead (override via ``extra_overrides`` if your fork
+    # differs).
     base_overrides: List[str] = [
         "task=TacSLTaskBulb",
+        "train=TacSLTaskBulbInsertionPPO_LSTM_dict_AAC",
         f"num_envs={num_envs}",
         f"seed={seed}",
         "headless=true",
