@@ -28,6 +28,9 @@ _REPO_ROOT = os.path.dirname(_EVAL_DIR)
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
+# IsaacGym must be imported before torch (also enforced in isaac_gym_wrapper).
+import isaacgym  # noqa: E402, F401
+
 import numpy as np  # noqa: E402
 import torch  # noqa: E402
 import torch.nn as nn  # noqa: E402

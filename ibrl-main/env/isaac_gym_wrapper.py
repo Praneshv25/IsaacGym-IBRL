@@ -23,6 +23,12 @@ import os
 import sys
 from typing import Dict, List, Optional, Tuple
 
+# IsaacGym must be imported before PyTorch when both are present.
+try:
+    import isaacgym  # noqa: F401
+except ImportError:
+    pass
+
 import torch
 
 # ---------------------------------------------------------------------------
@@ -104,8 +110,6 @@ def make_tacsl_bulb_task(
     -------
     TacSLTaskBulb instance (a ``VecTask`` subclass).
     """
-    # isaacgym must be imported *before* torch on some platforms
-    import isaacgym  # noqa: F401
     from hydra import compose, initialize_config_dir
     from hydra.core.global_hydra import GlobalHydra
     from isaacgymenvs.tasks.tacsl.tacsl_task_bulb import TacSLTaskBulb

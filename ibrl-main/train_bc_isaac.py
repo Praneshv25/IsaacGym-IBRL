@@ -51,6 +51,11 @@ import sys
 from dataclasses import dataclass, field
 from typing import Optional
 
+try:
+    import isaacgym  # noqa: F401 — before torch when IsaacGym is installed
+except ImportError:
+    pass
+
 import numpy as np
 import pyrallis
 import torch
