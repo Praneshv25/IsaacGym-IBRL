@@ -140,18 +140,45 @@ def run_bc_eval_isaac(
     *,
     verbose: bool = True,
     stddev: float = 0.0,
+    log_every: int = 200,
 ) -> List[float]:
     scores: List[float] = []
     episode_rewards: List[float] = []
 
     running_reward = torch.zeros(env.num_envs, device=env.device)
+    if verbose:
+        print("[eval_bc_isaac_min] env.reset() ...", flush=True)
     obs = env.reset()
+    if verbose:
+        print(
+            f"[eval_bc_isaac_min] env.reset() done | max_episode_length={env.max_episode_length} | "
+            f"num_envs={env.num_envs} | need {num_episodes} completed episodes",
+            flush=True,
+        )
+        if log_every > 0:
+            print(
+                f"[eval_bc_isaac_min] progress every {log_every} sim steps "
+                f"(episode lines only when an env finishes)",
+                flush=True,
+            )
 
+    sim_step = 0
     with torch.no_grad(), _EvalMode(agent):
         while len(scores) < num_episodes:
             actions = agent.act(obs, eval_mode=True, stddev=stddev, cpu=False)
 
             obs, rewards, dones, successes = env.step(actions)
+            sim_step += 1
+
+            if verbose and log_every > 0 and sim_step % log_every == 0:
+                emin = int(env._episode_step.min().item())
+                emax = int(env._episode_step.max().item())
+                print(
+                    f"[eval_bc_isaac_min] sim_step={sim_step} | "
+                    f"episodes_done={len(scores)}/{num_episodes} | "
+                    f"episode_step min/max={emin}/{emax}",
+                    flush=True,
+                )
 
             running_reward += rewards
 
@@ -225,6 +252,12 @@ def main() -> None:
     p.add_argument("--graphics_device_id", type=int, default=-999)
     p.add_argument("--headless", type=int, default=-1)
     p.add_argument("--seed", type=int, default=-1)
+    p.add_argument(
+        "--log_every",
+        type=int,
+        default=200,
+        help="Print rollout progress every N vectorized sim steps (0 disables)",
+    )
     args = p.parse_args()
 
     ckpt = os.path.abspath(args.checkpoint)
@@ -276,7 +309,12 @@ def main() -> None:
     print(env)
 
     scores = run_bc_eval_isaac(
-        env, policy, args.num_episodes, verbose=True, stddev=0.0
+        env,
+        policy,
+        args.num_episodes,
+        verbose=True,
+        stddev=0.0,
+        log_every=args.log_every,
     )
     print(f"[eval_bc_isaac_min] mean success: {float(np.mean(scores)):.4f}")
 
