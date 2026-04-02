@@ -33,6 +33,9 @@ loaded and their transitions are merged into one flat dataset::
     # single file
     cfg     = IsaacDatasetConfig(path="demos.pkl")
 
+    # vision BC (CLI): use image_keys_csv so pyrallis accepts a plain string
+    cfg     = IsaacDatasetConfig(path="demos.pkl", image_keys_csv="wrist")
+
     # whole folder
     cfg     = IsaacDatasetConfig(path="path/to/pkl_folder")
 
@@ -138,6 +141,11 @@ class IsaacDatasetConfig:
         (e.g. ``["rgb"]`` or camera names used in your MarsLab export).
         Images are stored as uint8 ``(C, H, W)``. Leave empty for
         state-only ``StateBcPolicy`` training.
+    image_keys_csv:
+        **CLI-friendly** alternative to ``image_keys``. Comma-separated
+        camera names (e.g. ``wrist`` or ``cam_a,cam_b``). If non-empty after
+        stripping, it **replaces** ``image_keys`` after init — use this when
+        pyrallis fails to parse ``--dataset.image_keys ...`` for a list.
     """
 
     path: str = ""
@@ -147,6 +155,12 @@ class IsaacDatasetConfig:
     normalize_actions: bool = True
     action_scale_path: str = ""
     image_keys: List[str] = field(default_factory=list)
+    image_keys_csv: str = ""
+
+    def __post_init__(self) -> None:
+        csv = (self.image_keys_csv or "").strip()
+        if csv:
+            self.image_keys = [k.strip() for k in csv.split(",") if k.strip()]
 
 
 # ---------------------------------------------------------------------------

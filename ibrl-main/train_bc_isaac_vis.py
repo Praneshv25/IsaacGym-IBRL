@@ -10,9 +10,12 @@ style training on the TacSL bulb task.
 ``right_tactile_camera_taxim``, ``tactile_force_field_right``) stay in the
 ``obs`` dict but are **ignored** unless you list them in ``image_keys``.
 
-``dataset.image_keys`` must name keys present under each transition's
-``obs``. Images are converted to uint8 ``(C, H, W)``; proprio is still the
-14-D padded state (same as ``train_bc_isaac.py``).
+Camera keys must match each transition's ``obs``. Prefer
+``--dataset.image_keys_csv wrist`` on the CLI — pyrallis often fails to parse
+``--dataset.image_keys wrist`` for ``List[str]``. Alternatively use
+``--dataset.image_keys[0] wrist`` or a YAML config. Images are uint8
+``(C, H, W)``; with ``--policy.use_prop 1``, proprio is the same 14-D padded
+state as ``train_bc_isaac.py``.
 
 **Live IsaacGym evaluation** (``eval_with_env=1``) is **not** supported here:
 ``IsaacGymBulbEnv`` is state-only. Use training / val loss, or add a
@@ -25,22 +28,31 @@ images.
 Schema reference (``MarsLab Offline RL Feb Transitions.pkl``): ``list`` of
 transitions; ``obs`` includes ``state`` ``(1,7)`` float32, ``wrist``
 ``(1,256,256,3)`` float32 (~0–1 RGB), plus tactile fields you can omit.
-``BcPolicy`` needs every listed ``image_keys`` view to share the same
-``H×W`` (single ``wrist`` satisfies that).
+``BcPolicy`` needs every camera view to share the same ``H×W`` (single
+``wrist`` satisfies that).
 
-Usage (wrist only)::
+Examples::
 
+    # wrist + 14-D proprio (recommended)
     python train_bc_isaac_vis.py \\
-        --dataset.path "../MarsLab Offline RL Feb Transitions.pkl" \\
-        --dataset.image_keys wrist \\
+        --dataset.path "/path/to/data.pkl_or_folder" \\
+        --dataset.image_keys_csv wrist \\
+        --policy.use_prop 1 \\
         --save_dir exps/bc_isaac_vis/run1
 
-Optional: multiple **RGB** cameras with identical ``H×W`` (pyrallis list)::
+    # shard 3+ (reuse shard1 action scale; warm-start from previous shard)
+    python train_bc_isaac_vis.py \\
+        --dataset.path "/path/to/shard3" \\
+        --dataset.image_keys_csv wrist \\
+        --policy.use_prop 1 \\
+        --dataset.action_scale_path exps/bc_isaac_vis/shard1/action_scale.pt \\
+        --init_checkpoint exps/bc_isaac_vis/shard2/model0.pt \\
+        --save_dir exps/bc_isaac_vis/shard3
 
+    # multiple RGB cameras (comma-separated or indexed)
     python train_bc_isaac_vis.py \\
         --dataset.path /path/to/data \\
-        --dataset.image_keys[0] cam_a \\
-        --dataset.image_keys[1] cam_b \\
+        --dataset.image_keys_csv cam_a,cam_b \\
         --save_dir exps/bc_isaac_vis/run1
 """
 
@@ -139,8 +151,8 @@ class Workspace:
         keys = [str(k).strip() for k in cfg.dataset.image_keys if str(k).strip()]
         if not keys:
             raise ValueError(
-                "train_bc_isaac_vis: set dataset.image_keys to non-empty list of "
-                "obs keys (e.g. --dataset.image_keys rgb). "
+                "train_bc_isaac_vis: set dataset.image_keys_csv (e.g. wrist) or "
+                "dataset.image_keys / dataset.image_keys[0]. "
                 "For state-only BC use train_bc_isaac.py."
             )
 
