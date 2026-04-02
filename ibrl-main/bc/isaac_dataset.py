@@ -134,6 +134,10 @@ class IsaacDatasetConfig:
         ``action_scale.pt`` so every shard uses the same normalisation as
         the checkpoint you warm-start from. Requires ``normalize_actions``
         to be ``True``.
+    fixed_action_scale_path:
+        Alias for ``action_scale_path`` (same file format). If set, it
+        **overwrites** ``action_scale_path`` in ``__post_init__`` so CLI/YAML
+        can emphasize a **global** scale from ``tools/compute_global_action_scale.py``.
     image_keys:
         If non-empty, load RGB observations from ``tr["obs"][key]`` for each
         transition and train with ``BcPolicy`` (CNN encoder + optional
@@ -154,6 +158,7 @@ class IsaacDatasetConfig:
     use_default_socket_pad: bool = True
     normalize_actions: bool = True
     action_scale_path: str = ""
+    fixed_action_scale_path: str = ""
     image_keys: List[str] = field(default_factory=list)
     image_keys_csv: str = ""
 
@@ -161,6 +166,9 @@ class IsaacDatasetConfig:
         csv = (self.image_keys_csv or "").strip()
         if csv:
             self.image_keys = [k.strip() for k in csv.split(",") if k.strip()]
+        fix = (self.fixed_action_scale_path or "").strip()
+        if fix:
+            self.action_scale_path = fix
 
 
 # ---------------------------------------------------------------------------
@@ -271,6 +279,40 @@ class IsaacPklDataset:
             if not os.path.isfile(path):
                 raise ValueError(f"Path does not exist: {path}")
             return [path]
+
+    @staticmethod
+    def compute_global_max_abs_action_scale(pkl_files: List[str]) -> torch.Tensor:
+        """Per-dimension ``max |action|`` over all transitions in the given files.
+
+        Matches the default ``normalize_actions`` rule in ``__init__`` (clamp each
+        dim to ≥ 1.0). Use with ``action_scale_path`` / ``fixed_action_scale_path``
+        so every shard uses identical BC action scaling.
+
+        Parameters
+        ----------
+        pkl_files:
+            Sorted list of ``.pkl`` paths (one file loaded at a time).
+
+        Returns
+        -------
+        Tensor of shape ``(ACTION_DIM,)``, float32.
+        """
+        acc = torch.zeros(ACTION_DIM, dtype=torch.float32)
+        for fpath in pkl_files:
+            with open(fpath, "rb") as f:
+                raw = pickle.load(f)
+            if not isinstance(raw, list):
+                raise ValueError(f"{fpath}: expected a list of transition dicts")
+            for t in raw:
+                a = torch.from_numpy(
+                    np.asarray(t["action"], dtype=np.float32).reshape(-1)
+                )
+                if a.numel() != ACTION_DIM:
+                    raise ValueError(
+                        f"{fpath}: action dim {a.numel()} != {ACTION_DIM}"
+                    )
+                acc = torch.maximum(acc, a.abs())
+        return acc.clamp(min=1.0)
 
     @staticmethod
     def _load_raw_transitions(pkl_files: List[str]) -> List[dict]:

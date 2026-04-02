@@ -42,14 +42,27 @@ Usage
         --dataset.action_scale_path exps/bc_isaac/shard1/action_scale.pt \\
         --init_checkpoint exps/bc_isaac/shard1/model0.pt \\
         --save_dir exps/bc_isaac/shard2
+
+    # Global shuffled cycling (one shard in RAM at a time; avoids sequential
+    # fine-tune forgetting). Requires a global scale file, e.g. from
+    # ``python tools/compute_global_action_scale.py --data_dir ... --out g.pt``::
+    #
+    #   python train_bc_isaac.py \\
+    #       --dataset.path /path/to/all_pkls_dir \\
+    #       --dataset.fixed_action_scale_path g.pt \\
+    #       --val_dataset_path /path/to/val.pkl \\
+    #       --shard_cycle 1 \\
+    #       --save_dir exps/bc_isaac/cycle1
 """
 
-#from __future__ import annotations
+# from __future__ import annotations
 
+import gc
 import os
+import random
 import sys
-from dataclasses import dataclass, field
-from typing import Optional
+from dataclasses import dataclass, field, replace
+from typing import List, Optional
 
 try:
     import isaacgym  # noqa: F401 — before torch when IsaacGym is installed
@@ -120,6 +133,15 @@ class MainConfig(common_utils.RunConfig):
     use_wb: int = 0
     # Save an extra named checkpoint every N epochs (−1 = disabled)
     save_per: int = -1
+
+    # Directory of ``*.pkl`` shards; each epoch shuffles shards and trains
+    # ``epoch_len // num_shards`` steps per file (one shard loaded at a time).
+    # With ``normalize_actions``, set ``dataset.fixed_action_scale_path`` or
+    # ``dataset.action_scale_path`` to a global ``.pt`` from
+    # ``tools/compute_global_action_scale.py``.
+    shard_cycle: int = 0
+    val_dataset_path: str = ""
+    val_num_batches: int = 20
 
     def __post_init__(self) -> None:
         # Derived read-only fields (informational only)
@@ -220,10 +242,33 @@ class Workspace:
 
         self.cfg_dict = yaml.safe_load(open(cfg.cfg_path))
 
+        self.val_dataset: Optional[IsaacPklDataset] = None
+        self._shard_paths: List[str] = []
+        self._shard_val_warned: bool = False
+
+        vdp = (cfg.val_dataset_path or "").strip()
+        if vdp:
+            print(common_utils.wrap_ruler("val dataset"))
+            self.val_dataset = IsaacPklDataset(replace(cfg.dataset, path=vdp))
+
         # ── dataset ───────────────────────────────────────────────────────
         print(common_utils.wrap_ruler("dataset"))
-        self.dataset = IsaacPklDataset(cfg.dataset)
-        # Keep a reference to the per-dim action scale for checkpointing.
+        if cfg.shard_cycle:
+            dp = cfg.dataset.path
+            if not os.path.isdir(dp):
+                raise ValueError(
+                    "shard_cycle=1 requires dataset.path to be a directory of *.pkl files, "
+                    f"not {dp!r}"
+                )
+            self._shard_paths = IsaacPklDataset._resolve_pkl_files(dp)
+            if cfg.dataset.normalize_actions and not (cfg.dataset.action_scale_path or "").strip():
+                raise ValueError(
+                    "shard_cycle=1 with normalize_actions requires dataset.action_scale_path "
+                    "or dataset.fixed_action_scale_path (tools/compute_global_action_scale.py)."
+                )
+            self.dataset = IsaacPklDataset(replace(cfg.dataset, path=self._shard_paths[0]))
+        else:
+            self.dataset = IsaacPklDataset(cfg.dataset)
         self._action_scale = self.dataset.action_scale
 
         # ── policy ────────────────────────────────────────────────────────
@@ -276,14 +321,17 @@ class Workspace:
     def _eval_loss(self, num_batches: int = 20) -> float:
         """Estimate validation loss on randomly sampled mini-batches.
 
-        Since we have no held-out split we sample from the same pool;
-        this is used only as a proxy metric when live-env eval is off.
+        Uses ``val_dataset_path`` when set; otherwise the current training
+        dataset (merged directory or single shard).
         """
+        ds = self.val_dataset if self.val_dataset is not None else self.dataset
+        if ds is None:
+            raise RuntimeError("_eval_loss: no dataset loaded.")
         device = next(self.policy.parameters()).device
         losses = []
         with torch.no_grad(), utils.eval_mode(self.policy):
             for _ in range(num_batches):
-                batch = self.dataset.sample_bc(self.cfg.batch_size, str(device))
+                batch = ds.sample_bc(self.cfg.batch_size, str(device))
                 loss = self.policy.loss(batch)
                 losses.append(loss.item())
         return float(np.mean(losses))
@@ -350,24 +398,73 @@ class Workspace:
             self.policy.train(True)
             epoch_losses = []
 
-            for _ in range(cfg.epoch_len):
-                with stopwatch.time("sample"):
-                    batch = self.dataset.sample_bc(cfg.batch_size, device)
+            if cfg.shard_cycle:
+                paths = list(self._shard_paths)
+                rng = random.Random(int(cfg.seed) + epoch)
+                rng.shuffle(paths)
+                n_shards = len(paths)
+                steps_per = max(1, cfg.epoch_len // n_shards)
 
-                with stopwatch.time("train"):
-                    loss = self.policy.loss(batch)
+                for sp in paths:
+                    shard_cfg = replace(cfg.dataset, path=sp)
+                    ds = IsaacPklDataset(shard_cfg)
+                    self.dataset = ds
+                    self._action_scale = ds.action_scale
 
-                    self.optim.zero_grad()
-                    loss.backward()
-                    grad_norm = torch.nn.utils.clip_grad_norm_(
-                        self.policy.parameters(), max_norm=cfg.grad_clip
+                    for _ in range(steps_per):
+                        with stopwatch.time("sample"):
+                            batch = ds.sample_bc(cfg.batch_size, device)
+
+                        with stopwatch.time("train"):
+                            loss = self.policy.loss(batch)
+
+                            self.optim.zero_grad()
+                            loss.backward()
+                            grad_norm = torch.nn.utils.clip_grad_norm_(
+                                self.policy.parameters(), max_norm=cfg.grad_clip
+                            )
+                            self.optim.step()
+
+                        epoch_losses.append(loss.item())
+                        stat["train/loss"].append(loss.item())
+                        stat["train/grad_norm"].append(grad_norm.item())
+                        optim_step += 1
+
+                    del ds
+                    gc.collect()
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+
+                if self.val_dataset is None:
+                    if not self._shard_val_warned:
+                        print(
+                            "[train_bc_isaac] shard_cycle: val_dataset_path is empty — "
+                            "val_loss uses alphabetically-first shard only. "
+                            "Set val_dataset_path for a held-out validation set."
+                        )
+                        self._shard_val_warned = True
+                    self.dataset = IsaacPklDataset(
+                        replace(cfg.dataset, path=self._shard_paths[0])
                     )
-                    self.optim.step()
+            else:
+                for _ in range(cfg.epoch_len):
+                    with stopwatch.time("sample"):
+                        batch = self.dataset.sample_bc(cfg.batch_size, device)
 
-                epoch_losses.append(loss.item())
-                stat["train/loss"].append(loss.item())
-                stat["train/grad_norm"].append(grad_norm.item())
-                optim_step += 1
+                    with stopwatch.time("train"):
+                        loss = self.policy.loss(batch)
+
+                        self.optim.zero_grad()
+                        loss.backward()
+                        grad_norm = torch.nn.utils.clip_grad_norm_(
+                            self.policy.parameters(), max_norm=cfg.grad_clip
+                        )
+                        self.optim.step()
+
+                    epoch_losses.append(loss.item())
+                    stat["train/loss"].append(loss.item())
+                    stat["train/grad_norm"].append(grad_norm.item())
+                    optim_step += 1
 
             mean_loss = float(np.mean(epoch_losses))
             epoch_time = stopwatch.elapsed_time_since_reset
@@ -385,7 +482,7 @@ class Workspace:
             else:
                 # Use negative loss so TopkSaver (higher = better) saves the
                 # checkpoint with the lowest training loss.
-                val_loss = self._eval_loss()
+                val_loss = self._eval_loss(num_batches=cfg.val_num_batches)
                 score = -val_loss
                 stat["score/neg_loss"].append(score)
                 score_label = f"val_loss={val_loss:.6f}"
@@ -410,10 +507,11 @@ class Workspace:
             # ── summary ───────────────────────────────────────────────────
             stat.summary(epoch, reset=True)
             stopwatch.summary(reset=True)
+            shard_info = f" | shards={len(self._shard_paths)}" if cfg.shard_cycle else ""
             print(
                 f"epoch {epoch + 1:4d}/{cfg.num_epoch} | "
                 f"loss={mean_loss:.6f} | {score_label} | "
-                f"best={best_score:.4f} | saved={saved}"
+                f"best={best_score:.4f} | saved={saved}{shard_info}"
             )
             print(common_utils.get_mem_usage())
 
