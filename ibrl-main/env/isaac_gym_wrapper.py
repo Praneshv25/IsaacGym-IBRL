@@ -21,6 +21,7 @@ extra book-keeping.
 
 import os
 import sys
+import tempfile
 from typing import Dict, List, Optional, Tuple
 
 # IsaacGym must be imported before PyTorch when both are present.
@@ -83,6 +84,9 @@ def make_tacsl_bulb_task(
     headless: bool,
     seed: int,
     extra_overrides: Optional[List[str]] = None,
+    max_episode_length: Optional[int] = None,
+    virtual_screen_capture: bool = False,
+    force_render: bool = False,
 ):
     """Compose the TacSLTaskBulb hydra config (cameras / tactile OFF) and
     directly instantiate the VecTask.
@@ -105,6 +109,12 @@ def make_tacsl_bulb_task(
     extra_overrides:
         Optional list of additional hydra overrides, e.g.
         ``["task.rl.max_episode_length=200"]``.
+    max_episode_length:
+        If set, overrides ``task.rl.max_episode_length`` (else YAML default).
+    virtual_screen_capture:
+        Passed to VecTask; use on headless machines with ``pyvirtualdisplay``.
+    force_render:
+        If True, VecTask renders during each physics substep (slow).
 
     Returns
     -------
@@ -132,7 +142,7 @@ def make_tacsl_bulb_task(
         "train=TacSLTaskBulbInsertionPPO_LSTM_dict_AAC",
         f"num_envs={num_envs}",
         f"seed={seed}",
-        "headless=true",
+        f"headless={str(headless).lower()}",
         # ── disable cameras & tactile sensors ──────────────────────────────
         "task.env.use_camera_obs=false",
         "task.env.use_isaac_gym_tactile=false",
@@ -142,6 +152,9 @@ def make_tacsl_bulb_task(
         # ── dict observations (only the 14-D state keys will be populated) ─
         "task.env.use_dict_obs=true",
     ]
+
+    if max_episode_length is not None:
+        base_overrides.append(f"task.rl.max_episode_length={int(max_episode_length)}")
 
     if extra_overrides:
         base_overrides = base_overrides + extra_overrides
@@ -159,8 +172,8 @@ def make_tacsl_bulb_task(
             sim_device=sim_device,
             graphics_device_id=graphics_device_id,
             headless=headless,
-            virtual_screen_capture=False,
-            force_render=False,
+            virtual_screen_capture=virtual_screen_capture,
+            force_render=force_render,
         )
     return env
 
@@ -229,6 +242,9 @@ class IsaacGymBulbEnv:
         seed: int = 0,
         env_reward_scale: float = 1.0,
         extra_overrides: Optional[List[str]] = None,
+        max_episode_length: Optional[int] = None,
+        virtual_screen_capture: bool = False,
+        force_render: bool = False,
     ) -> None:
         self.num_envs = num_envs
         self.device = rl_device
@@ -243,6 +259,9 @@ class IsaacGymBulbEnv:
             headless=headless,
             seed=seed,
             extra_overrides=extra_overrides,
+            max_episode_length=max_episode_length,
+            virtual_screen_capture=virtual_screen_capture,
+            force_render=force_render,
         )
 
         # ── IBRL / QAgent compatibility ────────────────────────────────────
@@ -381,6 +400,41 @@ class IsaacGymBulbEnv:
     def episode_reward(self) -> torch.Tensor:
         """Current per-env cumulative episode reward (since last reset)."""
         return self._episode_reward.clone()
+
+    def capture_viewer_frame(self):
+        """Return one RGB frame (``numpy.ndarray`` H×W×3) from the Isaac Gym viewer.
+
+        Returns ``None`` if ``headless=True`` (no viewer). Does not call
+        ``sync_frame_time`` so recording stays fast.
+        """
+        import imageio.v2 as imageio
+
+        ig = self.ig_env
+        viewer = getattr(ig, "viewer", None)
+        if viewer is None:
+            return None
+
+        if str(ig.device) != "cpu":
+            ig.gym.fetch_results(ig.sim, True)
+        ig.gym.step_graphics(ig.sim)
+        ig.gym.draw_viewer(viewer, ig.sim, True)
+
+        fd, path = tempfile.mkstemp(suffix=".png")
+        os.close(fd)
+        try:
+            ig.gym.write_viewer_image_to_file(viewer, path)
+            rgb = imageio.imread(path)
+        finally:
+            try:
+                os.unlink(path)
+            except OSError:
+                pass
+
+        if rgb is None or rgb.ndim < 2:
+            return None
+        if rgb.shape[-1] == 4:
+            return rgb[..., :3]
+        return rgb
 
     @property
     def max_episode_length(self) -> int:

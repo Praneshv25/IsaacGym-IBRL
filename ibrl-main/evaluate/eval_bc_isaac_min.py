@@ -10,6 +10,9 @@ Run from ``ibrl-main``::
     python evaluate/eval_bc_isaac_min.py \\
         --checkpoint exps/bc_isaac/run1/model0.pt \\
         --num_episodes 50
+
+Default ``--max_episode_length`` is 1000 (set ``<=0`` for YAML horizon). For an MP4
+of one episode see ``evaluate/record_bc_isaac_episode.py``.
 """
 
 from __future__ import annotations
@@ -258,6 +261,12 @@ def main() -> None:
         default=200,
         help="Print rollout progress every N vectorized sim steps (0 disables)",
     )
+    p.add_argument(
+        "--max_episode_length",
+        type=int,
+        default=1000,
+        help="Override task.rl.max_episode_length (<=0 uses YAML default)",
+    )
     args = p.parse_args()
 
     ckpt = os.path.abspath(args.checkpoint)
@@ -297,6 +306,11 @@ def main() -> None:
             f"env uses policy output directly)."
         )
 
+    mel = (
+        None
+        if args.max_episode_length <= 0
+        else int(args.max_episode_length)
+    )
     env = IsaacGymBulbEnv(
         isaacgym_envs_path=ig_path,
         num_envs=num_envs,
@@ -305,6 +319,7 @@ def main() -> None:
         graphics_device_id=gdev,
         headless=headless,
         seed=seed,
+        max_episode_length=mel,
     )
     print(env)
 
