@@ -11,3 +11,4 @@ data/
 .env
 release/model
 *.zip
+*.pt

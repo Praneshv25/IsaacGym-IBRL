@@ -1,0 +1,45 @@
+batch_size: 64
+dataset:
+  action_scale_path: ''
+  image_keys:
+  - wrist
+  image_keys_csv: wrist
+  max_episodes: -1
+  max_len: -1
+  normalize_actions: true
+  path: /home/pvelmuru/projects/shard0
+  use_default_socket_pad: true
+epoch_len: 1000
+eval_with_env: 0
+grad_clip: 5.0
+graphics_device_id: -1
+headless: true
+init_checkpoint: ''
+isaacgym_envs_path: ../manifeel-isaacgymenvs-tacsl-manifeel-rl
+lr: 0.0001
+num_epoch: 100
+num_eval_envs: 16
+num_eval_episodes: 20
+policy:
+  dropout: 0
+  encoder:
+    dropout: 0
+    feat_dim: 512
+    fuse_method: cat
+    resnet:
+      downsample: default
+      norm_layer: gnn
+      shallow: 0
+      stem: default
+  hidden_dim: 1024
+  num_layer: 1
+  orth_init: 0
+  prop_noise: 0
+  use_prop: 1
+rl_device: cuda:0
+save_dir: exps/bc_isaac_vis/shard0
+save_per: -1
+seed: 1
+sim_device: cuda:0
+use_wb: 0
+weight_decay: 0.0

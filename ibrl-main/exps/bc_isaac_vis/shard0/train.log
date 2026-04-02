@@ -1,0 +1,818 @@
+=================config=================
+batch_size: 64
+dataset:
+  action_scale_path: ''
+  image_keys:
+  - wrist
+  image_keys_csv: wrist
+  max_episodes: -1
+  max_len: -1
+  normalize_actions: true
+  path: /home/pvelmuru/projects/shard0
+  use_default_socket_pad: true
+epoch_len: 1000
+eval_with_env: 0
+grad_clip: 5.0
+graphics_device_id: -1
+headless: true
+init_checkpoint: ''
+isaacgym_envs_path: ../manifeel-isaacgymenvs-tacsl-manifeel-rl
+lr: 0.0001
+num_epoch: 100
+num_eval_envs: 16
+num_eval_episodes: 20
+policy:
+  dropout: 0
+  encoder:
+    dropout: 0
+    feat_dim: 512
+    fuse_method: cat
+    resnet:
+      downsample: default
+      norm_layer: gnn
+      shallow: 0
+      stem: default
+  hidden_dim: 1024
+  num_layer: 1
+  orth_init: 0
+  prop_noise: 0
+  use_prop: 1
+rl_device: cuda:0
+save_dir: exps/bc_isaac_vis/shard0
+save_per: -1
+seed: 1
+sim_device: cuda:0
+use_wb: 0
+weight_decay: 0.0
+========================================
+================dataset=================
+[IsaacPklDataset] loading 4 pkl files from directory: /home/pvelmuru/projects/shard0
+  2026-02-10-13-50-16_transitions.pkl
+  2026-02-10-16-38-48_transitions.pkl
+  2026-02-10-16-43-56_transitions.pkl
+  2026-02-10-16-49-02_transitions.pkl
+  obs keys (sample transition): ['wrist', 'right_tactile_camera_taxim', 'tactile_force_field_right', 'state']
+  vision mode        : rl_cameras=['wrist'], obs_shape=(3, 256, 256)
+  Episodes loaded    : 4
+  Total transitions  : 3740
+  Success transitions: 0
+  Success episodes   : 0 / 4
+  Episode length     : min=837, max=1031, mean=935.0
+  obs_shape          : (3, 256, 256)
+  action_dim         : 7
+  action normalisation : ENABLED
+  action_scale (data max-abs) : ['1.2257', '1.0000', '1.5000', '1.0000', '1.0000', '8.2500', '1.0000']
+  action dim 0        : [-0.9371, 1.0000]
+  action dim 1        : [-0.5357, 0.8657]
+  action dim 2        : [-1.0000, 0.7114]
+  action dim 3        : [0.0000, 0.0000]
+  action dim 4        : [0.0000, 0.0000]
+  action dim 5        : [-1.0000, 1.0000]
+  action dim 6        : [0.0000, 0.0350]
+=================policy=================
+norm layer: gnn
+BcPolicy(
+  (encoder): MultiViewEncoder(
+    (encoders): ModuleList(
+      (0): ResNetEncoder(
+        (nets): ResNet(
+          (init_downsample): Sequential(
+            (0): Conv2d(3, 64, kernel_size=(4, 4), stride=(2, 2), bias=False)
+            (1): GroupNorm(64, 64, eps=1e-05, affine=True)
+            (2): ReLU(inplace=True)
+            (3): MaxPool2d(kernel_size=3, stride=2, padding=1, dilation=1, ceil_mode=False)
+          )
+          (layer1): Sequential(
+            (0): BasicBlock(
+              (conv1): Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+              (bn1): GroupNorm(64, 64, eps=1e-05, affine=True)
+              (relu): ReLU()
+              (conv2): Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+              (bn2): GroupNorm(64, 64, eps=1e-05, affine=True)
+            )
+            (1): BasicBlock(
+              (conv1): Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+              (bn1): GroupNorm(64, 64, eps=1e-05, affine=True)
+              (relu): ReLU()
+              (conv2): Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+              (bn2): GroupNorm(64, 64, eps=1e-05, affine=True)
+            )
+          )
+          (layer2): Sequential(
+            (0): BasicBlock(
+              (conv1): Conv2d(64, 128, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
+              (bn1): GroupNorm(128, 128, eps=1e-05, affine=True)
+              (relu): ReLU()
+              (conv2): Conv2d(128, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+              (bn2): GroupNorm(128, 128, eps=1e-05, affine=True)
+              (downsample): Sequential(
+                (0): Conv2d(64, 128, kernel_size=(1, 1), stride=(2, 2), bias=False)
+                (1): GroupNorm(128, 128, eps=1e-05, affine=True)
+              )
+            )
+            (1): BasicBlock(
+              (conv1): Conv2d(128, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+              (bn1): GroupNorm(128, 128, eps=1e-05, affine=True)
+              (relu): ReLU()
+              (conv2): Conv2d(128, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+              (bn2): GroupNorm(128, 128, eps=1e-05, affine=True)
+            )
+          )
+          (layer3): Sequential(
+            (0): BasicBlock(
+              (conv1): Conv2d(128, 256, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
+              (bn1): GroupNorm(256, 256, eps=1e-05, affine=True)
+              (relu): ReLU()
+              (conv2): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+              (bn2): GroupNorm(256, 256, eps=1e-05, affine=True)
+              (downsample): Sequential(
+                (0): Conv2d(128, 256, kernel_size=(1, 1), stride=(2, 2), bias=False)
+                (1): GroupNorm(256, 256, eps=1e-05, affine=True)
+              )
+            )
+            (1): BasicBlock(
+              (conv1): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+              (bn1): GroupNorm(256, 256, eps=1e-05, affine=True)
+              (relu): ReLU()
+              (conv2): Conv2d(256, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+              (bn2): GroupNorm(256, 256, eps=1e-05, affine=True)
+            )
+          )
+          (layer4): Sequential(
+            (0): BasicBlock(
+              (conv1): Conv2d(256, 512, kernel_size=(3, 3), stride=(2, 2), padding=(1, 1), bias=False)
+              (bn1): GroupNorm(512, 512, eps=1e-05, affine=True)
+              (relu): ReLU()
+              (conv2): Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+              (bn2): GroupNorm(512, 512, eps=1e-05, affine=True)
+              (downsample): Sequential(
+                (0): Conv2d(256, 512, kernel_size=(1, 1), stride=(2, 2), bias=False)
+                (1): GroupNorm(512, 512, eps=1e-05, affine=True)
+              )
+            )
+            (1): BasicBlock(
+              (conv1): Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+              (bn1): GroupNorm(512, 512, eps=1e-05, affine=True)
+              (relu): ReLU()
+              (conv2): Conv2d(512, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1), bias=False)
+              (bn2): GroupNorm(512, 512, eps=1e-05, affine=True)
+            )
+          )
+        )
+      )
+    )
+    (compress_streams): ModuleList(
+      (0): Sequential(
+        (0): Linear(in_features=32768, out_features=512, bias=True)
+        (1): LayerNorm((512,), eps=1e-05, elementwise_affine=True)
+        (2): Dropout(p=0, inplace=False)
+        (3): ReLU()
+      )
+    )
+  )
+  (policy): Sequential(
+    (0): Linear(in_features=526, out_features=1024, bias=True)
+    (1): LayerNorm((1024,), eps=1e-05, elementwise_affine=True)
+    (2): ReLU()
+    (3): Linear(in_features=1024, out_features=7, bias=True)
+    (4): Tanh()
+  )
+)
+| Module                                               |    #Params |      % |
+|------------------------------------------------------+------------+--------|
+| encoder.encoders.0.nets.init_downsample.0.weight     |      3,072 |   0.01 |
+| encoder.encoders.0.nets.init_downsample.1.weight     |         64 |   0.00 |
+| encoder.encoders.0.nets.init_downsample.1.bias       |         64 |   0.00 |
+| encoder.encoders.0.nets.layer1.0.conv1.weight        |     36,864 |   0.13 |
+| encoder.encoders.0.nets.layer1.0.bn1.weight          |         64 |   0.00 |
+| encoder.encoders.0.nets.layer1.0.bn1.bias            |         64 |   0.00 |
+| encoder.encoders.0.nets.layer1.0.conv2.weight        |     36,864 |   0.13 |
+| encoder.encoders.0.nets.layer1.0.bn2.weight          |         64 |   0.00 |
+| encoder.encoders.0.nets.layer1.0.bn2.bias            |         64 |   0.00 |
+| encoder.encoders.0.nets.layer1.1.conv1.weight        |     36,864 |   0.13 |
+| encoder.encoders.0.nets.layer1.1.bn1.weight          |         64 |   0.00 |
+| encoder.encoders.0.nets.layer1.1.bn1.bias            |         64 |   0.00 |
+| encoder.encoders.0.nets.layer1.1.conv2.weight        |     36,864 |   0.13 |
+| encoder.encoders.0.nets.layer1.1.bn2.weight          |         64 |   0.00 |
+| encoder.encoders.0.nets.layer1.1.bn2.bias            |         64 |   0.00 |
+| encoder.encoders.0.nets.layer2.0.conv1.weight        |     73,728 |   0.26 |
+| encoder.encoders.0.nets.layer2.0.bn1.weight          |        128 |   0.00 |
+| encoder.encoders.0.nets.layer2.0.bn1.bias            |        128 |   0.00 |
+| encoder.encoders.0.nets.layer2.0.conv2.weight        |    147,456 |   0.52 |
+| encoder.encoders.0.nets.layer2.0.bn2.weight          |        128 |   0.00 |
+| encoder.encoders.0.nets.layer2.0.bn2.bias            |        128 |   0.00 |
+| encoder.encoders.0.nets.layer2.0.downsample.0.weight |      8,192 |   0.03 |
+| encoder.encoders.0.nets.layer2.0.downsample.1.weight |        128 |   0.00 |
+| encoder.encoders.0.nets.layer2.0.downsample.1.bias   |        128 |   0.00 |
+| encoder.encoders.0.nets.layer2.1.conv1.weight        |    147,456 |   0.52 |
+| encoder.encoders.0.nets.layer2.1.bn1.weight          |        128 |   0.00 |
+| encoder.encoders.0.nets.layer2.1.bn1.bias            |        128 |   0.00 |
+| encoder.encoders.0.nets.layer2.1.conv2.weight        |    147,456 |   0.52 |
+| encoder.encoders.0.nets.layer2.1.bn2.weight          |        128 |   0.00 |
+| encoder.encoders.0.nets.layer2.1.bn2.bias            |        128 |   0.00 |
+| encoder.encoders.0.nets.layer3.0.conv1.weight        |    294,912 |   1.03 |
+| encoder.encoders.0.nets.layer3.0.bn1.weight          |        256 |   0.00 |
+| encoder.encoders.0.nets.layer3.0.bn1.bias            |        256 |   0.00 |
+| encoder.encoders.0.nets.layer3.0.conv2.weight        |    589,824 |   2.07 |
+| encoder.encoders.0.nets.layer3.0.bn2.weight          |        256 |   0.00 |
+| encoder.encoders.0.nets.layer3.0.bn2.bias            |        256 |   0.00 |
+| encoder.encoders.0.nets.layer3.0.downsample.0.weight |     32,768 |   0.11 |
+| encoder.encoders.0.nets.layer3.0.downsample.1.weight |        256 |   0.00 |
+| encoder.encoders.0.nets.layer3.0.downsample.1.bias   |        256 |   0.00 |
+| encoder.encoders.0.nets.layer3.1.conv1.weight        |    589,824 |   2.07 |
+| encoder.encoders.0.nets.layer3.1.bn1.weight          |        256 |   0.00 |
+| encoder.encoders.0.nets.layer3.1.bn1.bias            |        256 |   0.00 |
+| encoder.encoders.0.nets.layer3.1.conv2.weight        |    589,824 |   2.07 |
+| encoder.encoders.0.nets.layer3.1.bn2.weight          |        256 |   0.00 |
+| encoder.encoders.0.nets.layer3.1.bn2.bias            |        256 |   0.00 |
+| encoder.encoders.0.nets.layer4.0.conv1.weight        |  1,179,648 |   4.14 |
+| encoder.encoders.0.nets.layer4.0.bn1.weight          |        512 |   0.00 |
+| encoder.encoders.0.nets.layer4.0.bn1.bias            |        512 |   0.00 |
+| encoder.encoders.0.nets.layer4.0.conv2.weight        |  2,359,296 |   8.28 |
+| encoder.encoders.0.nets.layer4.0.bn2.weight          |        512 |   0.00 |
+| encoder.encoders.0.nets.layer4.0.bn2.bias            |        512 |   0.00 |
+| encoder.encoders.0.nets.layer4.0.downsample.0.weight |    131,072 |   0.46 |
+| encoder.encoders.0.nets.layer4.0.downsample.1.weight |        512 |   0.00 |
+| encoder.encoders.0.nets.layer4.0.downsample.1.bias   |        512 |   0.00 |
+| encoder.encoders.0.nets.layer4.1.conv1.weight        |  2,359,296 |   8.28 |
+| encoder.encoders.0.nets.layer4.1.bn1.weight          |        512 |   0.00 |
+| encoder.encoders.0.nets.layer4.1.bn1.bias            |        512 |   0.00 |
+| encoder.encoders.0.nets.layer4.1.conv2.weight        |  2,359,296 |   8.28 |
+| encoder.encoders.0.nets.layer4.1.bn2.weight          |        512 |   0.00 |
+| encoder.encoders.0.nets.layer4.1.bn2.bias            |        512 |   0.00 |
+| encoder.compress_streams.0.0.weight                  | 16,777,216 |  58.87 |
+| encoder.compress_streams.0.0.bias                    |        512 |   0.00 |
+| encoder.compress_streams.0.1.weight                  |        512 |   0.00 |
+| encoder.compress_streams.0.1.bias                    |        512 |   0.00 |
+| policy.0.weight                                      |    538,624 |   1.89 |
+| policy.0.bias                                        |      1,024 |   0.00 |
+| policy.1.weight                                      |      1,024 |   0.00 |
+| policy.1.bias                                        |      1,024 |   0.00 |
+| policy.3.weight                                      |      7,168 |   0.03 |
+| policy.3.bias                                        |          7 |   0.00 |
+| Total                                                | 28,497,799 | 100.00 |
+================training================
+Saved model to exps/bc_isaac_vis/shard0/model0.pt
+[0] Time spent = 46.93 s
+0: other/epoch_time  : 46.52
+0: other/speed       : 21.50
+0: score/best        : -0.06
+0: score/neg_loss    : -0.06
+0: train/grad_norm   [ 1000]: avg:   3.2711, min:   0.4478[ 961], max:  79.1904[   1]
+0: train/loss        [ 1000]: avg:   0.0954, min:   0.0297[ 683], max:   4.3076[   2]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           6.5 |  42.9 |
+| train    |  1000 |           8.6 |  57.1 |
+| total(s) |     1 |          15.1 | 100   |
+epoch    1/100 | loss=0.095437 | val_loss=0.058777 | best=-0.0588 | saved=True
+Mem info: used: 8.584 GB, avail: 6.518 GB, total: 15.461 GB
+Saved model to exps/bc_isaac_vis/shard0/model0.pt
+[1] Time spent = 46.69 s
+1: other/epoch_time  : 46.24
+1: other/speed       : 21.63
+1: score/best        : -0.05
+1: score/neg_loss    : -0.05
+1: train/grad_norm   [ 1000]: avg:   1.9707, min:   0.4234[ 596], max:   5.5787[  73]
+1: train/loss        [ 1000]: avg:   0.0575, min:   0.0267[ 256], max:   0.1002[  73]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           6.7 |  45.1 |
+| train    |  1000 |           8.1 |  54.9 |
+| total(s) |     1 |          14.8 | 100   |
+epoch    2/100 | loss=0.057547 | val_loss=0.048803 | best=-0.0488 | saved=True
+Mem info: used: 8.584 GB, avail: 6.517 GB, total: 15.461 GB
+Saved model to exps/bc_isaac_vis/shard0/model0.pt
+[2] Time spent = 46.39 s
+2: other/epoch_time  : 45.94
+2: other/speed       : 21.77
+2: score/best        : -0.04
+2: score/neg_loss    : -0.04
+2: train/grad_norm   [ 1000]: avg:   1.5489, min:   0.3982[ 514], max:   3.8990[ 847]
+2: train/loss        [ 1000]: avg:   0.0481, min:   0.0233[ 703], max:   0.0859[ 632]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           6.3 |  42.8 |
+| train    |  1000 |           8.4 |  57.2 |
+| total(s) |     1 |          14.7 | 100   |
+epoch    3/100 | loss=0.048063 | val_loss=0.044828 | best=-0.0448 | saved=True
+Mem info: used: 8.584 GB, avail: 6.507 GB, total: 15.461 GB
+Saved model to exps/bc_isaac_vis/shard0/model0.pt
+[3] Time spent = 46.68 s
+3: other/epoch_time  : 46.24
+3: other/speed       : 21.63
+3: score/best        : -0.04
+3: score/neg_loss    : -0.04
+3: train/grad_norm   [ 1000]: avg:   1.3503, min:   0.3147[ 160], max:   3.2128[  15]
+3: train/loss        [ 1000]: avg:   0.0422, min:   0.0174[ 515], max:   0.0778[ 136]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           6.6 |  44.2 |
+| train    |  1000 |           8.3 |  55.8 |
+| total(s) |     1 |          14.9 | 100   |
+epoch    4/100 | loss=0.042197 | val_loss=0.035560 | best=-0.0356 | saved=True
+Mem info: used: 8.584 GB, avail: 6.506 GB, total: 15.461 GB
+Saved model to exps/bc_isaac_vis/shard0/model0.pt
+[4] Time spent = 46.70 s
+4: other/epoch_time  : 46.27
+4: other/speed       : 21.61
+4: score/best        : -0.03
+4: score/neg_loss    : -0.03
+4: train/grad_norm   [ 1000]: avg:   1.1729, min:   0.3557[ 364], max:   3.4812[ 196]
+4: train/loss        [ 1000]: avg:   0.0365, min:   0.0174[ 992], max:   0.0719[ 207]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           6.7 |  45.9 |
+| train    |  1000 |           7.9 |  54.1 |
+| total(s) |     1 |          14.6 | 100   |
+epoch    5/100 | loss=0.036528 | val_loss=0.031998 | best=-0.0320 | saved=True
+Mem info: used: 8.584 GB, avail: 6.506 GB, total: 15.461 GB
+Saved model to exps/bc_isaac_vis/shard0/model0.pt
+[5] Time spent = 46.52 s
+5: other/epoch_time  : 46.07
+5: other/speed       : 21.71
+5: score/best        : -0.03
+5: score/neg_loss    : -0.03
+5: train/grad_norm   [ 1000]: avg:   1.0620, min:   0.2914[ 281], max:   2.6454[ 758]
+5: train/loss        [ 1000]: avg:   0.0326, min:   0.0120[ 521], max:   0.0605[  26]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           6.4 |  43.9 |
+| train    |  1000 |           8.2 |  56.1 |
+| total(s) |     1 |          14.7 | 100   |
+epoch    6/100 | loss=0.032593 | val_loss=0.027425 | best=-0.0274 | saved=True
+Mem info: used: 8.584 GB, avail: 6.506 GB, total: 15.461 GB
+Saved model to exps/bc_isaac_vis/shard0/model0.pt
+[6] Time spent = 46.75 s
+6: other/epoch_time  : 46.30
+6: other/speed       : 21.60
+6: score/best        : -0.03
+6: score/neg_loss    : -0.03
+6: train/grad_norm   [ 1000]: avg:   0.9535, min:   0.2894[ 180], max:   2.2261[ 400]
+6: train/loss        [ 1000]: avg:   0.0285, min:   0.0097[ 628], max:   0.0646[ 654]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           6.7 |  45.2 |
+| train    |  1000 |           8.1 |  54.8 |
+| total(s) |     1 |          14.8 | 100   |
+epoch    7/100 | loss=0.028491 | val_loss=0.027080 | best=-0.0271 | saved=True
+Mem info: used: 8.584 GB, avail: 6.505 GB, total: 15.461 GB
+Saved model to exps/bc_isaac_vis/shard0/model0.pt
+[7] Time spent = 46.47 s
+7: other/epoch_time  : 46.03
+7: other/speed       : 21.72
+7: score/best        : -0.02
+7: score/neg_loss    : -0.02
+7: train/grad_norm   [ 1000]: avg:   0.8727, min:   0.2548[ 968], max:   1.8506[ 273]
+7: train/loss        [ 1000]: avg:   0.0250, min:   0.0109[ 569], max:   0.0540[ 880]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           6.5 |  44.4 |
+| train    |  1000 |           8.1 |  55.6 |
+| total(s) |     1 |          14.5 | 100   |
+epoch    8/100 | loss=0.024977 | val_loss=0.022280 | best=-0.0223 | saved=True
+Mem info: used: 8.584 GB, avail: 6.505 GB, total: 15.461 GB
+Saved model to exps/bc_isaac_vis/shard0/model0.pt
+[8] Time spent = 46.75 s
+8: other/epoch_time  : 46.30
+8: other/speed       : 21.60
+8: score/best        : -0.02
+8: score/neg_loss    : -0.02
+8: train/grad_norm   [ 1000]: avg:   0.8302, min:   0.2547[ 398], max:   2.3465[ 415]
+8: train/loss        [ 1000]: avg:   0.0218, min:   0.0095[ 847], max:   0.0528[ 350]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           6.7 |  44.6 |
+| train    |  1000 |           8.3 |  55.4 |
+| total(s) |     1 |          15   | 100   |
+epoch    9/100 | loss=0.021761 | val_loss=0.020745 | best=-0.0207 | saved=True
+Mem info: used: 8.584 GB, avail: 6.506 GB, total: 15.461 GB
+Saved model to exps/bc_isaac_vis/shard0/model0.pt
+[9] Time spent = 46.72 s
+9: other/epoch_time  : 46.29
+9: other/speed       : 21.60
+9: score/best        : -0.02
+9: score/neg_loss    : -0.02
+9: train/grad_norm   [ 1000]: avg:   0.7664, min:   0.2584[ 792], max:   1.9169[ 377]
+9: train/loss        [ 1000]: avg:   0.0187, min:   0.0061[ 912], max:   0.0468[ 103]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           6.7 |  44.4 |
+| train    |  1000 |           8.3 |  55.6 |
+| total(s) |     1 |          15   | 100   |
+epoch   10/100 | loss=0.018747 | val_loss=0.017239 | best=-0.0172 | saved=True
+Mem info: used: 8.584 GB, avail: 6.510 GB, total: 15.461 GB
+Saved model to exps/bc_isaac_vis/shard0/model0.pt
+[10] Time spent = 46.70 s
+10: other/epoch_time  : 46.25
+10: other/speed       : 21.62
+10: score/best        : -0.01
+10: score/neg_loss    : -0.01
+10: train/grad_norm   [ 1000]: avg:   0.6943, min:   0.2261[ 850], max:   1.9962[ 984]
+10: train/loss        [ 1000]: avg:   0.0159, min:   0.0051[ 903], max:   0.0342[ 311]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           6.6 |  44.2 |
+| train    |  1000 |           8.3 |  55.8 |
+| total(s) |     1 |          15   | 100   |
+epoch   11/100 | loss=0.015888 | val_loss=0.013869 | best=-0.0139 | saved=True
+Mem info: used: 8.584 GB, avail: 6.510 GB, total: 15.461 GB
+Saved model to exps/bc_isaac_vis/shard0/model0.pt
+[11] Time spent = 46.62 s
+11: other/epoch_time  : 46.18
+11: other/speed       : 21.65
+11: score/best        : -0.01
+11: score/neg_loss    : -0.01
+11: train/grad_norm   [ 1000]: avg:   0.6552, min:   0.2215[ 472], max:   1.4299[  99]
+11: train/loss        [ 1000]: avg:   0.0139, min:   0.0053[ 145], max:   0.0353[ 255]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           6.6 |  44.3 |
+| train    |  1000 |           8.2 |  55.7 |
+| total(s) |     1 |          14.8 | 100   |
+epoch   12/100 | loss=0.013892 | val_loss=0.011140 | best=-0.0111 | saved=True
+Mem info: used: 8.584 GB, avail: 6.510 GB, total: 15.461 GB
+Saved model to exps/bc_isaac_vis/shard0/model0.pt
+[12] Time spent = 46.63 s
+12: other/epoch_time  : 46.18
+12: other/speed       : 21.65
+12: score/best        : -0.01
+12: score/neg_loss    : -0.01
+12: train/grad_norm   [ 1000]: avg:   0.6357, min:   0.1805[ 273], max:   1.9585[ 753]
+12: train/loss        [ 1000]: avg:   0.0120, min:   0.0047[ 408], max:   0.0282[ 761]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           6.6 |  44.2 |
+| train    |  1000 |           8.3 |  55.8 |
+| total(s) |     1 |          14.8 | 100   |
+epoch   13/100 | loss=0.011996 | val_loss=0.010467 | best=-0.0105 | saved=True
+Mem info: used: 8.584 GB, avail: 6.509 GB, total: 15.461 GB
+Saved model to exps/bc_isaac_vis/shard0/model0.pt
+[13] Time spent = 46.62 s
+13: other/epoch_time  : 46.17
+13: other/speed       : 21.66
+13: score/best        : -0.01
+13: score/neg_loss    : -0.01
+13: train/grad_norm   [ 1000]: avg:   0.5740, min:   0.1607[ 640], max:   1.3405[ 935]
+13: train/loss        [ 1000]: avg:   0.0108, min:   0.0031[ 717], max:   0.0296[ 739]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           6.6 |  43.8 |
+| train    |  1000 |           8.4 |  56.2 |
+| total(s) |     1 |          15   | 100   |
+epoch   14/100 | loss=0.010755 | val_loss=0.009381 | best=-0.0094 | saved=True
+Mem info: used: 8.584 GB, avail: 6.510 GB, total: 15.461 GB
+Saved model to exps/bc_isaac_vis/shard0/model0.pt
+[14] Time spent = 46.85 s
+14: other/epoch_time  : 46.39
+14: other/speed       : 21.56
+14: score/best        : -0.01
+14: score/neg_loss    : -0.01
+14: train/grad_norm   [ 1000]: avg:   0.5337, min:   0.1761[ 547], max:   1.2133[ 784]
+14: train/loss        [ 1000]: avg:   0.0091, min:   0.0030[ 496], max:   0.0236[ 433]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           6.8 |  44.8 |
+| train    |  1000 |           8.4 |  55.2 |
+| total(s) |     1 |          15.1 | 100   |
+epoch   15/100 | loss=0.009125 | val_loss=0.006944 | best=-0.0069 | saved=True
+Mem info: used: 8.584 GB, avail: 6.510 GB, total: 15.461 GB
+Saved model to exps/bc_isaac_vis/shard0/model0.pt
+[15] Time spent = 46.73 s
+15: other/epoch_time  : 46.29
+15: other/speed       : 21.60
+15: score/best        : -0.01
+15: score/neg_loss    : -0.01
+15: train/grad_norm   [ 1000]: avg:   0.4920, min:   0.1723[ 865], max:   1.3232[ 786]
+15: train/loss        [ 1000]: avg:   0.0079, min:   0.0028[ 205], max:   0.0353[ 530]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           6.6 |  43.8 |
+| train    |  1000 |           8.5 |  56.2 |
+| total(s) |     1 |          15.1 | 100   |
+epoch   16/100 | loss=0.007909 | val_loss=0.005771 | best=-0.0058 | saved=True
+Mem info: used: 8.584 GB, avail: 6.510 GB, total: 15.461 GB
+[16] Time spent = 46.67 s
+16: other/epoch_time  : 46.32
+16: other/speed       : 21.59
+16: score/best        : -0.01
+16: score/neg_loss    : -0.01
+16: train/grad_norm   [ 1000]: avg:   0.4523, min:   0.1421[ 860], max:   1.2135[ 751]
+16: train/loss        [ 1000]: avg:   0.0070, min:   0.0019[ 860], max:   0.0323[ 514]
+Timer Info:
+| name     |   num |   t/call (ms) |   % |
+|----------+-------+---------------+-----|
+| sample   |  1000 |           6.6 |  44 |
+| train    |  1000 |           8.5 |  56 |
+| total(s) |     1 |          15.1 | 100 |
+epoch   17/100 | loss=0.007030 | val_loss=0.006177 | best=-0.0058 | saved=False
+Mem info: used: 8.584 GB, avail: 6.509 GB, total: 15.461 GB
+Saved model to exps/bc_isaac_vis/shard0/model0.pt
+[17] Time spent = 46.69 s
+17: other/epoch_time  : 46.25
+17: other/speed       : 21.62
+17: score/best        : -0.01
+17: score/neg_loss    : -0.01
+17: train/grad_norm   [ 1000]: avg:   0.4327, min:   0.1555[ 625], max:   1.1715[ 633]
+17: train/loss        [ 1000]: avg:   0.0062, min:   0.0022[ 597], max:   0.0232[ 646]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           6.6 |  44.1 |
+| train    |  1000 |           8.4 |  55.9 |
+| total(s) |     1 |          15.1 | 100   |
+epoch   18/100 | loss=0.006220 | val_loss=0.005065 | best=-0.0051 | saved=True
+Mem info: used: 8.584 GB, avail: 6.509 GB, total: 15.461 GB
+[18] Time spent = 46.64 s
+18: other/epoch_time  : 46.28
+18: other/speed       : 21.61
+18: score/best        : -0.01
+18: score/neg_loss    : -0.01
+18: train/grad_norm   [ 1000]: avg:   0.4365, min:   0.1234[  71], max:   1.8069[ 511]
+18: train/loss        [ 1000]: avg:   0.0064, min:   0.0019[ 163], max:   0.0324[ 511]
+Timer Info:
+| name     |   num |   t/call (ms) |   % |
+|----------+-------+---------------+-----|
+| sample   |  1000 |           6.7 |  44 |
+| train    |  1000 |           8.5 |  56 |
+| total(s) |     1 |          15.1 | 100 |
+epoch   19/100 | loss=0.006410 | val_loss=0.005075 | best=-0.0051 | saved=False
+Mem info: used: 8.584 GB, avail: 6.509 GB, total: 15.461 GB
+Saved model to exps/bc_isaac_vis/shard0/model0.pt
+[19] Time spent = 46.78 s
+19: other/epoch_time  : 46.34
+19: other/speed       : 21.58
+19: score/best        : -0.00
+19: score/neg_loss    : -0.00
+19: train/grad_norm   [ 1000]: avg:   0.3775, min:   0.1222[ 490], max:   1.5453[ 578]
+19: train/loss        [ 1000]: avg:   0.0049, min:   0.0015[ 508], max:   0.0412[ 599]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           6.6 |  43.4 |
+| train    |  1000 |           8.7 |  56.6 |
+| total(s) |     1 |          15.3 | 100   |
+epoch   20/100 | loss=0.004900 | val_loss=0.004244 | best=-0.0042 | saved=True
+Mem info: used: 8.584 GB, avail: 6.509 GB, total: 15.461 GB
+[20] Time spent = 46.60 s
+20: other/epoch_time  : 46.25
+20: other/speed       : 21.62
+20: score/best        : -0.00
+20: score/neg_loss    : -0.00
+20: train/grad_norm   [ 1000]: avg:   0.3516, min:   0.0813[ 272], max:   0.9844[ 722]
+20: train/loss        [ 1000]: avg:   0.0043, min:   0.0013[ 184], max:   0.0215[ 497]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           6.5 |  43.9 |
+| train    |  1000 |           8.4 |  56.1 |
+| total(s) |     1 |          14.9 | 100   |
+epoch   21/100 | loss=0.004274 | val_loss=0.004974 | best=-0.0042 | saved=False
+Mem info: used: 8.584 GB, avail: 6.509 GB, total: 15.461 GB
+Saved model to exps/bc_isaac_vis/shard0/model0.pt
+[21] Time spent = 46.78 s
+21: other/epoch_time  : 46.32
+21: other/speed       : 21.59
+21: score/best        : -0.00
+21: score/neg_loss    : -0.00
+21: train/grad_norm   [ 1000]: avg:   0.3651, min:   0.1027[  35], max:   0.9049[ 725]
+21: train/loss        [ 1000]: avg:   0.0044, min:   0.0013[ 855], max:   0.0200[ 735]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           6.3 |  41.6 |
+| train    |  1000 |           8.8 |  58.4 |
+| total(s) |     1 |          15   | 100   |
+epoch   22/100 | loss=0.004410 | val_loss=0.004177 | best=-0.0042 | saved=True
+Mem info: used: 8.584 GB, avail: 6.508 GB, total: 15.461 GB
+[22] Time spent = 46.79 s
+22: other/epoch_time  : 46.43
+22: other/speed       : 21.54
+22: score/best        : -0.00
+22: score/neg_loss    : -0.00
+22: train/grad_norm   [ 1000]: avg:   0.3309, min:   0.0906[  90], max:   0.7807[ 536]
+22: train/loss        [ 1000]: avg:   0.0039, min:   0.0012[ 252], max:   0.0172[ 263]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           6.7 |  44.9 |
+| train    |  1000 |           8.3 |  55.1 |
+| total(s) |     1 |          15   | 100   |
+epoch   23/100 | loss=0.003928 | val_loss=0.004411 | best=-0.0042 | saved=False
+Mem info: used: 8.584 GB, avail: 6.508 GB, total: 15.461 GB
+[23] Time spent = 47.07 s
+23: other/epoch_time  : 46.72
+23: other/speed       : 21.41
+23: score/best        : -0.00
+23: score/neg_loss    : -0.00
+23: train/grad_norm   [ 1000]: avg:   0.3178, min:   0.0967[ 614], max:   0.9436[ 893]
+23: train/loss        [ 1000]: avg:   0.0037, min:   0.0011[ 531], max:   0.0245[ 127]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           7.2 |  46.3 |
+| train    |  1000 |           8.3 |  53.7 |
+| total(s) |     1 |          15.5 | 100   |
+epoch   24/100 | loss=0.003700 | val_loss=0.004531 | best=-0.0042 | saved=False
+Mem info: used: 8.584 GB, avail: 6.505 GB, total: 15.461 GB
+Saved model to exps/bc_isaac_vis/shard0/model0.pt
+[24] Time spent = 47.18 s
+24: other/epoch_time  : 46.74
+24: other/speed       : 21.40
+24: score/best        : -0.00
+24: score/neg_loss    : -0.00
+24: train/grad_norm   [ 1000]: avg:   0.3245, min:   0.0741[ 500], max:   1.4840[  17]
+24: train/loss        [ 1000]: avg:   0.0039, min:   0.0008[ 483], max:   0.0194[  38]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           7.2 |  46.7 |
+| train    |  1000 |           8.2 |  53.3 |
+| total(s) |     1 |          15.4 | 100   |
+epoch   25/100 | loss=0.003879 | val_loss=0.003154 | best=-0.0032 | saved=True
+Mem info: used: 8.584 GB, avail: 6.504 GB, total: 15.461 GB
+[25] Time spent = 46.86 s
+25: other/epoch_time  : 46.51
+25: other/speed       : 21.50
+25: score/best        : -0.00
+25: score/neg_loss    : -0.00
+25: train/grad_norm   [ 1000]: avg:   0.2886, min:   0.0753[  57], max:   0.8955[ 986]
+25: train/loss        [ 1000]: avg:   0.0031, min:   0.0007[ 666], max:   0.0176[ 252]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           7   |  46.1 |
+| train    |  1000 |           8.1 |  53.9 |
+| total(s) |     1 |          15.1 | 100   |
+epoch   26/100 | loss=0.003089 | val_loss=0.003723 | best=-0.0032 | saved=False
+Mem info: used: 8.584 GB, avail: 6.502 GB, total: 15.461 GB
+Saved model to exps/bc_isaac_vis/shard0/model0.pt
+[26] Time spent = 47.11 s
+26: other/epoch_time  : 46.67
+26: other/speed       : 21.43
+26: score/best        : -0.00
+26: score/neg_loss    : -0.00
+26: train/grad_norm   [ 1000]: avg:   0.2877, min:   0.0923[ 730], max:   1.3822[ 156]
+26: train/loss        [ 1000]: avg:   0.0031, min:   0.0008[ 109], max:   0.0172[ 711]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           7.1 |  46.6 |
+| train    |  1000 |           8.2 |  53.4 |
+| total(s) |     1 |          15.3 | 100   |
+epoch   27/100 | loss=0.003053 | val_loss=0.002507 | best=-0.0025 | saved=True
+Mem info: used: 8.584 GB, avail: 6.502 GB, total: 15.461 GB
+Saved model to exps/bc_isaac_vis/shard0/model0.pt
+[27] Time spent = 46.79 s
+27: other/epoch_time  : 46.36
+27: other/speed       : 21.57
+27: score/best        : -0.00
+27: score/neg_loss    : -0.00
+27: train/grad_norm   [ 1000]: avg:   0.2732, min:   0.0586[ 290], max:   0.8080[ 701]
+27: train/loss        [ 1000]: avg:   0.0029, min:   0.0007[ 593], max:   0.0198[  25]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           6.8 |  45.8 |
+| train    |  1000 |           8.1 |  54.2 |
+| total(s) |     1 |          14.9 | 100   |
+epoch   28/100 | loss=0.002891 | val_loss=0.001985 | best=-0.0020 | saved=True
+Mem info: used: 8.584 GB, avail: 6.501 GB, total: 15.461 GB
+[28] Time spent = 46.51 s
+28: other/epoch_time  : 46.15
+28: other/speed       : 21.67
+28: score/best        : -0.00
+28: score/neg_loss    : -0.00
+28: train/grad_norm   [ 1000]: avg:   0.2735, min:   0.0814[ 772], max:   1.1104[ 196]
+28: train/loss        [ 1000]: avg:   0.0029, min:   0.0007[ 734], max:   0.0200[ 519]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           6.6 |  43.8 |
+| train    |  1000 |           8.5 |  56.2 |
+| total(s) |     1 |          15.1 | 100   |
+epoch   29/100 | loss=0.002870 | val_loss=0.002713 | best=-0.0020 | saved=False
+Mem info: used: 8.584 GB, avail: 6.502 GB, total: 15.461 GB
+[29] Time spent = 47.18 s
+29: other/epoch_time  : 46.81
+29: other/speed       : 21.36
+29: score/best        : -0.00
+29: score/neg_loss    : -0.00
+29: train/grad_norm   [ 1000]: avg:   0.2591, min:   0.0605[ 173], max:   0.8883[ 310]
+29: train/loss        [ 1000]: avg:   0.0026, min:   0.0006[ 746], max:   0.0224[ 656]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           7.3 |  47.4 |
+| train    |  1000 |           8.1 |  52.6 |
+| total(s) |     1 |          15.4 | 100   |
+epoch   30/100 | loss=0.002566 | val_loss=0.002927 | best=-0.0020 | saved=False
+Mem info: used: 8.584 GB, avail: 6.506 GB, total: 15.461 GB
+[30] Time spent = 47.08 s
+30: other/epoch_time  : 46.72
+30: other/speed       : 21.40
+30: score/best        : -0.00
+30: score/neg_loss    : -0.00
+30: train/grad_norm   [ 1000]: avg:   0.2604, min:   0.0577[ 733], max:   0.8295[ 848]
+30: train/loss        [ 1000]: avg:   0.0025, min:   0.0006[ 633], max:   0.0234[ 423]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           7.2 |  47.3 |
+| train    |  1000 |           8   |  52.7 |
+| total(s) |     1 |          15.2 | 100   |
+epoch   31/100 | loss=0.002536 | val_loss=0.002500 | best=-0.0020 | saved=False
+Mem info: used: 8.584 GB, avail: 6.507 GB, total: 15.461 GB
+Saved model to exps/bc_isaac_vis/shard0/model0.pt
+[31] Time spent = 47.25 s
+31: other/epoch_time  : 46.80
+31: other/speed       : 21.37
+31: score/best        : -0.00
+31: score/neg_loss    : -0.00
+31: train/grad_norm   [ 1000]: avg:   0.2487, min:   0.0454[ 534], max:   1.0454[  73]
+31: train/loss        [ 1000]: avg:   0.0025, min:   0.0005[ 635], max:   0.0189[  76]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           7.3 |  47.1 |
+| train    |  1000 |           8.2 |  52.9 |
+| total(s) |     1 |          15.4 | 100   |
+epoch   32/100 | loss=0.002470 | val_loss=0.001728 | best=-0.0017 | saved=True
+Mem info: used: 8.584 GB, avail: 6.507 GB, total: 15.461 GB
+[32] Time spent = 47.04 s
+32: other/epoch_time  : 46.69
+32: other/speed       : 21.42
+32: score/best        : -0.00
+32: score/neg_loss    : -0.00
+32: train/grad_norm   [ 1000]: avg:   0.2923, min:   0.0577[ 983], max:   1.7123[ 206]
+32: train/loss        [ 1000]: avg:   0.0034, min:   0.0005[ 915], max:   0.0351[ 227]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           7.1 |  46.7 |
+| train    |  1000 |           8.2 |  53.3 |
+| total(s) |     1 |          15.3 | 100   |
+epoch   33/100 | loss=0.003388 | val_loss=0.001904 | best=-0.0017 | saved=False
+Mem info: used: 8.584 GB, avail: 6.507 GB, total: 15.461 GB
+Saved model to exps/bc_isaac_vis/shard0/model0.pt
+[33] Time spent = 47.17 s
+33: other/epoch_time  : 46.73
+33: other/speed       : 21.40
+33: score/best        : -0.00
+33: score/neg_loss    : -0.00
+33: train/grad_norm   [ 1000]: avg:   0.2115, min:   0.0552[  20], max:   1.2145[ 184]
+33: train/loss        [ 1000]: avg:   0.0019, min:   0.0004[ 185], max:   0.0163[  87]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           7.2 |  46.8 |
+| train    |  1000 |           8.2 |  53.2 |
+| total(s) |     1 |          15.3 | 100   |
+epoch   34/100 | loss=0.001871 | val_loss=0.001223 | best=-0.0012 | saved=True
+Mem info: used: 8.584 GB, avail: 6.506 GB, total: 15.461 GB
+[34] Time spent = 47.08 s
+34: other/epoch_time  : 46.72
+34: other/speed       : 21.40
+34: score/best        : -0.00
+34: score/neg_loss    : -0.00
+34: train/grad_norm   [ 1000]: avg:   0.2053, min:   0.0486[ 595], max:   0.8634[ 378]
+34: train/loss        [ 1000]: avg:   0.0017, min:   0.0004[ 586], max:   0.0164[ 650]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           7.2 |  46.3 |
+| train    |  1000 |           8.3 |  53.7 |
+| total(s) |     1 |          15.5 | 100   |
+epoch   35/100 | loss=0.001685 | val_loss=0.002794 | best=-0.0012 | saved=False
+Mem info: used: 8.584 GB, avail: 6.508 GB, total: 15.461 GB
+[35] Time spent = 46.78 s
+35: other/epoch_time  : 46.44
+35: other/speed       : 21.53
+35: score/best        : -0.00
+35: score/neg_loss    : -0.00
+35: train/grad_norm   [ 1000]: avg:   0.2373, min:   0.0397[ 454], max:   1.4718[ 697]
+35: train/loss        [ 1000]: avg:   0.0025, min:   0.0005[ 470], max:   0.0280[ 165]
+Timer Info:
+| name     |   num |   t/call (ms) |     % |
+|----------+-------+---------------+-------|
+| sample   |  1000 |           6.9 |  45.9 |
+| train    |  1000 |           8.1 |  54.1 |
+| total(s) |     1 |          15   | 100   |
+epoch   36/100 | loss=0.002459 | val_loss=0.002760 | best=-0.0012 | saved=False
+Mem info: used: 8.584 GB, avail: 6.509 GB, total: 15.461 GB
