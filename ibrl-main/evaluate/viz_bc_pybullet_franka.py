@@ -17,6 +17,10 @@ Run from ``ibrl-main``::
     python evaluate/viz_bc_pybullet_franka.py \\
         --checkpoint exps/bc_isaac/shard9/model0.pt
 
+Replay a headless Isaac rollout (``evaluate/dump_isaac_state_rollout.py``) without loading a policy::
+
+    python evaluate/viz_bc_pybullet_franka.py --replay_npz rollout.npz
+
 Uses ``--renderer tiny`` by default: hardware OpenGL in ``DIRECT`` mode often shows a half
 white / half gray image on macOS. The camera buffer may also be **width×height** or **flat**;
 the script reshapes to **height×width** for OpenCV (wrong layout looks like vertical bands).
@@ -32,7 +36,7 @@ import argparse
 import os
 import sys
 from dataclasses import dataclass
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import cv2
 import numpy as np
@@ -269,6 +273,117 @@ def _pybullet_camera_to_bgr_u8(rgb: np.ndarray, width: int, height: int) -> np.n
 # ---------------------------------------------------------------------------
 
 
+def _pb_apply_action_one_step(
+    bullet,
+    robot: int,
+    ee_link: int,
+    arm_indices: List[int],
+    finger_indices: List[int],
+    finger_limits: List[Tuple[float, float]],
+    a: np.ndarray,
+    *,
+    phys_steps: int,
+    ik_max_iter: int,
+    ik_resid: float,
+    gripper_force: float,
+) -> None:
+    """Apply one Isaac-style BC action (7-D) and step PyBullet ``phys_steps`` times."""
+    ls = bullet.getLinkState(robot, ee_link, computeForwardKinematics=True)
+    ee_pos = np.array(ls[4], dtype=np.float64)
+    ee_quat = np.array(ls[5], dtype=np.float64)
+    tgt_pos, tgt_quat = _apply_isaac_style_delta(ee_pos, ee_quat, a)
+
+    try:
+        q_arm = bullet.calculateInverseKinematics(
+            robot,
+            ee_link,
+            targetPosition=tgt_pos.tolist(),
+            targetOrientation=tgt_quat.tolist(),
+            jointIndices=arm_indices,
+            maxNumIterations=int(ik_max_iter),
+            residualThreshold=float(ik_resid),
+        )
+        q_arm = [float(x) for x in q_arm]
+        if len(q_arm) != len(arm_indices):
+            raise ValueError("IK length mismatch")
+    except (TypeError, ValueError):
+        q_full = bullet.calculateInverseKinematics(
+            robot,
+            ee_link,
+            targetPosition=tgt_pos.tolist(),
+            targetOrientation=tgt_quat.tolist(),
+            maxNumIterations=int(ik_max_iter),
+            residualThreshold=float(ik_resid),
+        )
+        q_arm = [float(q_full[j]) for j in arm_indices]
+
+    for k, j in enumerate(arm_indices):
+        bullet.setJointMotorControl2(
+            robot,
+            j,
+            bullet.POSITION_CONTROL,
+            targetPosition=float(q_arm[k]),
+            force=500.0,
+        )
+    for j, (lo, hi) in zip(finger_indices, finger_limits):
+        finger_target = _policy_a6_to_finger_command(a[6], lo, hi)
+        bullet.setJointMotorControl2(
+            robot,
+            j,
+            bullet.POSITION_CONTROL,
+            targetPosition=finger_target,
+            force=float(gripper_force),
+        )
+    for _ in range(phys_steps):
+        bullet.stepSimulation()
+
+
+def _pb_seed_pose_from_state0(
+    bullet,
+    robot: int,
+    ee_link: int,
+    arm_indices: List[int],
+    state0: np.ndarray,
+    *,
+    finger_indices: List[int],
+    finger_limits: List[Tuple[float, float]],
+    ik_max_iter: int,
+    ik_resid: float,
+    phys_steps: int,
+) -> None:
+    """Align arm EE to first Isaac observation (pos+quat from 14-D state)."""
+    s = state0.astype(np.float64)
+    tgt_pos = s[0:3]
+    tgt_quat = s[3:7]
+    try:
+        q_arm = bullet.calculateInverseKinematics(
+            robot,
+            ee_link,
+            targetPosition=tgt_pos.tolist(),
+            targetOrientation=tgt_quat.tolist(),
+            jointIndices=arm_indices,
+            maxNumIterations=int(ik_max_iter),
+            residualThreshold=float(ik_resid),
+        )
+        q_arm = [float(x) for x in q_arm]
+    except (TypeError, ValueError):
+        q_full = bullet.calculateInverseKinematics(
+            robot,
+            ee_link,
+            targetPosition=tgt_pos.tolist(),
+            targetOrientation=tgt_quat.tolist(),
+            maxNumIterations=int(ik_max_iter),
+            residualThreshold=float(ik_resid),
+        )
+        q_arm = [float(q_full[j]) for j in arm_indices]
+    for k, j in enumerate(arm_indices):
+        bullet.resetJointState(robot, j, float(q_arm[k]))
+    for j, (lo, hi) in zip(finger_indices, finger_limits):
+        bullet.resetJointState(robot, j, hi)
+    for _ in range(max(phys_steps * 4, 8)):
+        bullet.stepSimulation()
+
+
 def _find_link_index(body: int, name: str) -> int:
     """Joint index whose *child* link matches ``name`` (``getLinkState`` uses this index)."""
     import pybullet as p
@@ -330,25 +445,59 @@ def main() -> None:
         default=120.0,
         help="Max force for each finger joint (position control).",
     )
+    ap.add_argument(
+        "--replay_npz",
+        default="",
+        help="Replay ``states``/``actions`` from dump_isaac_state_rollout.py (no policy).",
+    )
     args = ap.parse_args()
 
-    ckpt = args.checkpoint.strip()
-    if not ckpt:
-        ckpt = os.path.join(_REPO_ROOT, "exps/bc_isaac/shard9/model0.pt")
-    ckpt = os.path.abspath(os.path.expanduser(ckpt))
-    if not os.path.isfile(ckpt):
-        sys.exit(f"Checkpoint not found: {ckpt}")
+    replay_path = (args.replay_npz or "").strip()
+    policy = None
+    device = torch.device("cpu")
 
-    run_dir = os.path.dirname(ckpt)
-    cfg_path = os.path.join(run_dir, "cfg.yaml")
-    if not os.path.isfile(cfg_path):
-        sys.exit(f"cfg.yaml not found next to checkpoint: {cfg_path}")
+    if replay_path:
+        replay_path = os.path.abspath(os.path.expanduser(replay_path))
+        if not os.path.isfile(replay_path):
+            sys.exit(f"--replay_npz not found: {replay_path}")
+    else:
+        ckpt = args.checkpoint.strip()
+        if not ckpt:
+            ckpt = os.path.join(_REPO_ROOT, "exps/bc_isaac/shard9/model0.pt")
+        ckpt = os.path.abspath(os.path.expanduser(ckpt))
+        if not os.path.isfile(ckpt):
+            sys.exit(f"Checkpoint not found: {ckpt}")
 
-    cfg_y = _load_cfg(cfg_path)
-    device = torch.device(
-        args.device if torch.cuda.is_available() and "cuda" in args.device else "cpu"
-    )
-    policy = _build_policy(cfg_y, ckpt, device)
+        run_dir = os.path.dirname(ckpt)
+        cfg_path = os.path.join(run_dir, "cfg.yaml")
+        if not os.path.isfile(cfg_path):
+            sys.exit(f"cfg.yaml not found next to checkpoint: {cfg_path}")
+
+        cfg_y = _load_cfg(cfg_path)
+        device = torch.device(
+            args.device if torch.cuda.is_available() and "cuda" in args.device else "cpu"
+        )
+        policy = _build_policy(cfg_y, ckpt, device)
+
+    replay_states: Optional[np.ndarray] = None
+    replay_actions: Optional[np.ndarray] = None
+    if replay_path:
+        data = np.load(replay_path, allow_pickle=True)
+        replay_states = np.asarray(data["states"], dtype=np.float32)
+        replay_actions = np.asarray(data["actions"], dtype=np.float32)
+        if replay_states.ndim != 2 or replay_states.shape[1] != _OBS_DIM:
+            sys.exit(
+                f"replay states expected (T+1, {_OBS_DIM}), got {replay_states.shape}"
+            )
+        if replay_actions.ndim != 2 or replay_actions.shape[1] != _ACTION_DIM:
+            sys.exit(
+                f"replay actions expected (T, {_ACTION_DIM}), got {replay_actions.shape}"
+            )
+        if replay_states.shape[0] != replay_actions.shape[0] + 1:
+            sys.exit(
+                f"expected states.shape[0] == actions.shape[0] + 1, got "
+                f"{replay_states.shape[0]} vs {replay_actions.shape[0]}"
+            )
 
     # DIRECT + software camera works headless; GUI optional for debugging.
     cid = p.connect(p.GUI if args.gui else p.DIRECT)
@@ -412,16 +561,30 @@ def main() -> None:
             flush=True,
         )
 
-    for k, j in enumerate(arm_indices):
-        p.resetJointState(robot, j, float(_INITIAL_ARM_Q[k]))
-    # Start gripper open (pybullet_data Panda: upper limit ≈ open)
-    for j, (lo, hi) in zip(finger_indices, finger_limits):
-        p.resetJointState(robot, j, hi)
-
     try:
         ee_link = _find_link_index(robot, "panda_hand")
     except RuntimeError:
         ee_link = _find_link_index(robot, "panda_link8")
+
+    if replay_states is not None:
+        _pb_seed_pose_from_state0(
+            p,
+            robot,
+            ee_link,
+            arm_indices,
+            replay_states[0],
+            finger_indices=finger_indices,
+            finger_limits=finger_limits,
+            ik_max_iter=args.ik_max_iter,
+            ik_resid=args.ik_resid,
+            phys_steps=args.phys_steps,
+        )
+    else:
+        for k, j in enumerate(arm_indices):
+            p.resetJointState(robot, j, float(_INITIAL_ARM_Q[k]))
+        # Start gripper open (pybullet_data Panda: upper limit ≈ open)
+        for j, (lo, hi) in zip(finger_indices, finger_limits):
+            p.resetJointState(robot, j, hi)
 
     # Camera pose similar to TacSLTaskBulb viewer-ish (looking at table center)
     cam_target = [0.5, 0.0, 0.1]
@@ -443,12 +606,19 @@ def main() -> None:
         p.ER_TINY_RENDERER if args.renderer == "tiny" else p.ER_BULLET_HARDWARE_OPENGL
     )
 
-    print(
-        f"[viz_bc_pybullet_franka] checkpoint={ckpt}\n"
-        f"  device={device} | ee_link={ee_link} | steps={args.steps} | "
-        f"renderer={args.renderer} | ik_iter={args.ik_max_iter}",
-        flush=True,
-    )
+    if replay_states is not None:
+        print(
+            f"[viz_bc_pybullet_franka] REPLAY {replay_path}\n"
+            f"  T={len(replay_actions)} | renderer={args.renderer} | ik_iter={args.ik_max_iter}",
+            flush=True,
+        )
+    else:
+        print(
+            f"[viz_bc_pybullet_franka] checkpoint={ckpt}\n"
+            f"  device={device} | ee_link={ee_link} | steps={args.steps} | "
+            f"renderer={args.renderer} | ik_iter={args.ik_max_iter}",
+            flush=True,
+        )
     print(
         f"  finger joints: {finger_indices} | limits={finger_limits} | "
         f"gripper_force={args.gripper_force}",
@@ -465,68 +635,38 @@ def main() -> None:
     except Exception:
         pass
 
+    max_steps = len(replay_actions) if replay_actions is not None else args.steps
     step_i = 0
-    while step_i < args.steps:
-        ls = p.getLinkState(robot, ee_link, computeForwardKinematics=True)
-        ee_pos = np.array(ls[4], dtype=np.float64)
-        ee_quat = np.array(ls[5], dtype=np.float64)
+    while step_i < max_steps:
+        if replay_actions is not None:
+            a = replay_actions[step_i].astype(np.float64)
+        else:
+            ls = p.getLinkState(robot, ee_link, computeForwardKinematics=True)
+            ee_pos = np.array(ls[4], dtype=np.float64)
+            ee_quat = np.array(ls[5], dtype=np.float64)
 
-        state_np = np.concatenate([ee_pos, ee_quat, _SOCKET_POS, _SOCKET_QUAT]).astype(
-            np.float32
+            state_np = np.concatenate(
+                [ee_pos, ee_quat, _SOCKET_POS, _SOCKET_QUAT]
+            ).astype(np.float32)
+            obs = {"state": torch.from_numpy(state_np).to(device)}
+            assert policy is not None
+            with torch.no_grad():
+                act_t = policy.act(obs, eval_mode=True, cpu=True)
+            a = act_t.numpy().astype(np.float64)
+
+        _pb_apply_action_one_step(
+            p,
+            robot,
+            ee_link,
+            arm_indices,
+            finger_indices,
+            finger_limits,
+            a,
+            phys_steps=args.phys_steps,
+            ik_max_iter=args.ik_max_iter,
+            ik_resid=args.ik_resid,
+            gripper_force=args.gripper_force,
         )
-        obs = {"state": torch.from_numpy(state_np).to(device)}
-        with torch.no_grad():
-            act_t = policy.act(obs, eval_mode=True, cpu=True)
-        a = act_t.numpy().astype(np.float64)
-
-        tgt_pos, tgt_quat = _apply_isaac_style_delta(ee_pos, ee_quat, a)
-
-        # Arm IK only (leave finger DOFs out of the IK solve)
-        try:
-            q_arm = p.calculateInverseKinematics(
-                robot,
-                ee_link,
-                targetPosition=tgt_pos.tolist(),
-                targetOrientation=tgt_quat.tolist(),
-                jointIndices=arm_indices,
-                maxNumIterations=int(args.ik_max_iter),
-                residualThreshold=float(args.ik_resid),
-            )
-            q_arm = [float(x) for x in q_arm]
-            if len(q_arm) != len(arm_indices):
-                raise ValueError("IK length mismatch")
-        except (TypeError, ValueError):
-            q_full = p.calculateInverseKinematics(
-                robot,
-                ee_link,
-                targetPosition=tgt_pos.tolist(),
-                targetOrientation=tgt_quat.tolist(),
-                maxNumIterations=int(args.ik_max_iter),
-                residualThreshold=float(args.ik_resid),
-            )
-            q_arm = [float(q_full[j]) for j in arm_indices]
-
-        for k, j in enumerate(arm_indices):
-            p.setJointMotorControl2(
-                robot,
-                j,
-                p.POSITION_CONTROL,
-                targetPosition=float(q_arm[k]),
-                force=500.0,
-            )
-        # Gripper: policy dim 6 in [-1,1] → joint targets using each finger's URDF limits
-        for j, (lo, hi) in zip(finger_indices, finger_limits):
-            finger_target = _policy_a6_to_finger_command(a[6], lo, hi)
-            p.setJointMotorControl2(
-                robot,
-                j,
-                p.POSITION_CONTROL,
-                targetPosition=finger_target,
-                force=float(args.gripper_force),
-            )
-
-        for _ in range(args.phys_steps):
-            p.stepSimulation()
 
         cam = _cam_pos()
         vm = p.computeViewMatrix(cam, cam_target, cam_up)
