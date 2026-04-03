@@ -95,6 +95,7 @@ def main() -> None:
     p.add_argument("--seed", type=int, default=-1)
     p.add_argument(
         "--save_wrist_camera",
+        "--save-wrist-camera",
         action="store_true",
         help="Enable Isaac sim cameras and save RGB (default key wrist_2 @ 256²; "
         "use --isaac_cam_key / --cam_h / --cam_w to change). For state-only BC.",
