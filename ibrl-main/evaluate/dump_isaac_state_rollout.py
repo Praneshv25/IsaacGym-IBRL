@@ -1,14 +1,16 @@
 #!/usr/bin/env python
 """
-Headless IsaacGym (TacSL bulb): run BC for one episode and save ``states`` /
-``actions`` to a compressed ``.npz`` for offline visualization (e.g. PyBullet).
+IsaacGym (TacSL bulb): run BC for one episode and save ``states`` / ``actions``
+to a compressed ``.npz`` (state-only runs **headless** by default).
 
-Optional **Isaac wrist (or other sim) RGB** via GPU camera sensors. Sim cameras
-need a **non-negative** ``graphics_device_id`` in ``create_sim`` (state-only
-cfgs often use ``-1``, which breaks ``create_camera_sensor``); this script bumps
-to the GPU index from ``sim_device`` (e.g. ``cuda:0`` → ``0``) when saving RGB.
-Use ``--graphics_device_id N`` to set explicitly. If headless capture still fails,
-try ``--no-headless`` (viewer on, like ``record_bc_isaac_episode.py``).
+**Sim cameras (``--save_wrist_camera`` or vision BC):** GPU camera tensors +
+``headless=True`` often **segfault** in Isaac Gym. This script therefore defaults
+to **viewer on** (same idea as ``record_bc_isaac_episode.py``). Use
+``--virtual_display`` on SSH nodes without a monitor (needs ``pyvirtualdisplay``).
+Only pass ``--headless`` if your headless EGL stack is known-good.
+
+Non-negative ``graphics_device_id`` is still required in ``create_sim`` for cameras;
+values ``-1`` from cfg are bumped using ``sim_device`` (e.g. ``cuda:0`` → ``0``).
 
 Use ``--save_wrist_camera`` for **state-only** checkpoints, or a **vision BC**
 checkpoint (``cfg.yaml`` with ``dataset.image_keys``) to enable cameras automatically.
@@ -143,11 +145,16 @@ def main() -> None:
         help="VecTask force_render=True (slower; try if camera buffers stay stale).",
     )
     p.add_argument(
-        "--no-headless",
-        "--no_headless",
+        "--headless",
         action="store_true",
-        help="Create the Gym viewer (like record_bc_isaac_episode). Use if sim cameras "
-        "still fail headless on your driver.",
+        help="No Gym viewer. For sim-camera dumps the default is viewer ON to avoid "
+        "common Isaac Gym segfaults; only use this if headless + cameras works on your machine.",
+    )
+    p.add_argument(
+        "--virtual_display",
+        action="store_true",
+        help="Use pyvirtualdisplay (no physical monitor), like record_bc_isaac_episode. "
+        "Implies a non-headless Gym path with an off-screen display.",
     )
     args = p.parse_args()
 
@@ -188,8 +195,24 @@ def main() -> None:
     mel = None if args.max_episode_length <= 0 else int(args.max_episode_length)
 
     want_rgb = vision or args.save_wrist_camera
-    headless = not bool(args.no_headless)
+    virtual_capture = bool(args.virtual_display)
     if want_rgb:
+        # Virtual framebuffer: match record_bc_isaac_episode (viewer path + SmartDisplay).
+        if virtual_capture:
+            headless = False
+        else:
+            headless = bool(args.headless)
+        if not headless:
+            print(
+                "[dump_isaac_state_rollout] Gym viewer enabled (default for sim cameras). "
+                "If you need true headless, pass --headless (may segfault on some drivers).",
+                flush=True,
+            )
+        if virtual_capture:
+            print(
+                "[dump_isaac_state_rollout] virtual_screen_capture=True (pyvirtualdisplay).",
+                flush=True,
+            )
         gdev_resolved = _graphics_device_for_sim_cameras(gdev, sim_dev)
         if gdev_resolved != gdev:
             print(
@@ -199,6 +222,8 @@ def main() -> None:
                 flush=True,
             )
         gdev = gdev_resolved
+    else:
+        headless = True
 
     device = torch.device(rl_dev if torch.cuda.is_available() else "cpu")
     action_scale: Optional[torch.Tensor] = None
@@ -263,6 +288,7 @@ def main() -> None:
         seed=seed,
         max_episode_length=mel,
         extra_overrides=extra_overrides,
+        virtual_screen_capture=bool(want_rgb and virtual_capture),
         force_render=bool(args.force_render),
     )
 
