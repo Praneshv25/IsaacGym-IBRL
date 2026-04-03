@@ -114,6 +114,10 @@ class IsaacDatasetConfig:
     max_len:
         Truncate episodes longer than this many steps.  ``-1`` means no
         truncation.
+    max_pkl_files:
+        If ``> 0``, only load this many ``*.pkl`` files (sorted) when *path*
+        is a directory.  ``-1`` loads all files.  Use ``1`` for cheap metadata-only
+        loads (e.g. policy init without reading every shard).
     use_default_socket_pad:
         If ``True`` (default), pad the 7-D demo state with the default
         socket pose ``[0.5, 0, 0.02, 0, 0, 0, 1]``.
@@ -155,6 +159,7 @@ class IsaacDatasetConfig:
     path: str = ""
     max_episodes: int = -1
     max_len: int = -1
+    max_pkl_files: int = -1
     use_default_socket_pad: bool = True
     normalize_actions: bool = True
     action_scale_path: str = ""
@@ -349,6 +354,12 @@ class IsaacPklDataset:
             raise ValueError("IsaacDatasetConfig.path must be set.")
 
         pkl_files = self._resolve_pkl_files(cfg.path)
+        if cfg.max_pkl_files > 0:
+            pkl_files = pkl_files[: cfg.max_pkl_files]
+            print(
+                f"[IsaacPklDataset] max_pkl_files={cfg.max_pkl_files} → "
+                f"using {len(pkl_files)} file(s)"
+            )
         if len(pkl_files) == 1:
             print(f"[IsaacPklDataset] loading from: {pkl_files[0]}")
         else:

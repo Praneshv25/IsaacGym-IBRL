@@ -209,7 +209,20 @@ def load_bc_policy_vis(
     cfg_path = os.path.join(run_folder, "cfg.yaml")
     cfg = load_main_config_from_cfg_yaml(cfg_path)
 
-    dataset = IsaacPklDataset(cfg.dataset)
+    # Only need image/proprio shapes for ``BcPolicy`` construction. Loading every
+    # ``*.pkl`` in a multi-shard directory can OOM or get SIGKILL; use one file
+    # and one transition. Action scaling comes from ``action_scale.pt`` below,
+    # not from scanning the dataset.
+    lite_dataset_cfg = replace(
+        cfg.dataset,
+        max_pkl_files=1,
+        max_episodes=1,
+        max_len=1,
+        normalize_actions=False,
+        action_scale_path="",
+        fixed_action_scale_path="",
+    )
+    dataset = IsaacPklDataset(lite_dataset_cfg)
     policy = BcPolicy(
         obs_shape=dataset.obs_shape,
         prop_shape=dataset.prop_shape,
