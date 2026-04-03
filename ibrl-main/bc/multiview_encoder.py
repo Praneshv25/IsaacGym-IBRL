@@ -1,15 +1,19 @@
 from __future__ import annotations
-from typing import Any
 from dataclasses import dataclass, field
+from typing import Literal
+
 import torch
 import torch.nn as nn
 from networks.encoder import ResNetEncoder, ResNetEncoderConfig
 
+FuseMethod = Literal["cat", "add", "mult"]
+
 
 @dataclass
 class MultiViewEncoderConfig:
-    fuse_method: Any = 'cat'
-    resnet: Any = field(default_factory=lambda: ResNetEncoderConfig())
+    # Literal (not str) avoids pyrallis/typing-inspect weakref errors on Python 3.8.
+    fuse_method: FuseMethod = "cat"
+    resnet: ResNetEncoderConfig = field(default_factory=lambda: ResNetEncoderConfig())
     feat_dim: int = 512
     dropout: float = 0
 
