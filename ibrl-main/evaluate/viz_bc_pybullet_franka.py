@@ -17,9 +17,13 @@ Run from ``ibrl-main``::
     python evaluate/viz_bc_pybullet_franka.py \\
         --checkpoint exps/bc_isaac/shard9/model0.pt
 
-Replay a headless Isaac rollout (``evaluate/dump_isaac_state_rollout.py``) without loading a policy::
+Replay a headless Isaac rollout (``evaluate/dump_isaac_state_rollout.py``) without loading a policy.
+If the ``.npz`` contains Isaac wrist (or other) RGB (e.g. ``--save_wrist_camera``), show it with
+``--replay_view isaac`` or ``both``; ``auto`` prefers Isaac RGB when present.
 
-    python evaluate/viz_bc_pybullet_franka.py --replay_npz rollout.npz
+::
+
+    python evaluate/viz_bc_pybullet_franka.py --replay_npz rollout.npz --replay_view isaac
 
 Uses ``--renderer tiny`` by default: hardware OpenGL in ``DIRECT`` mode often shows a half
 white / half gray image on macOS. The camera buffer may also be **width×height** or **flat**;
@@ -384,6 +388,26 @@ def _pb_seed_pose_from_state0(
         bullet.stepSimulation()
 
 
+def _load_replay_isaac_rgb(data: object) -> Tuple[Optional[np.ndarray], str]:
+    """Return saved Isaac sim RGB stack ``(T+1, H, W, 3)`` if present (e.g. ``wrist_rgb``)."""
+    if "wrist_rgb" in data.files:
+        return np.asarray(data["wrist_rgb"]), "wrist_rgb"
+    for k in sorted(data.files):
+        if not k.endswith("_rgb"):
+            continue
+        arr = np.asarray(data[k])
+        if arr.ndim == 4 and arr.shape[-1] == 3:
+            return arr, k
+    return None, ""
+
+
+def _u8_rgb_hwc_to_bgr(frame: np.ndarray) -> np.ndarray:
+    x = np.asarray(frame)
+    if x.dtype != np.uint8:
+        x = np.clip(x.astype(np.float64), 0.0, 255.0).astype(np.uint8)
+    return cv2.cvtColor(x, cv2.COLOR_RGB2BGR)
+
+
 def _find_link_index(body: int, name: str) -> int:
     """Joint index whose *child* link matches ``name`` (``getLinkState`` uses this index)."""
     import pybullet as p
@@ -450,6 +474,12 @@ def main() -> None:
         default="",
         help="Replay ``states``/``actions`` from dump_isaac_state_rollout.py (no policy).",
     )
+    ap.add_argument(
+        "--replay_view",
+        choices=("auto", "isaac", "pybullet", "both"),
+        default="auto",
+        help="Replay display: Isaac RGB from .npz if present (auto), PyBullet camera, or both side-by-side.",
+    )
     args = ap.parse_args()
 
     replay_path = (args.replay_npz or "").strip()
@@ -481,6 +511,8 @@ def main() -> None:
 
     replay_states: Optional[np.ndarray] = None
     replay_actions: Optional[np.ndarray] = None
+    replay_isaac_rgb: Optional[np.ndarray] = None
+    replay_isaac_rgb_key: str = ""
     if replay_path:
         data = np.load(replay_path, allow_pickle=True)
         replay_states = np.asarray(data["states"], dtype=np.float32)
@@ -498,6 +530,17 @@ def main() -> None:
                 f"expected states.shape[0] == actions.shape[0] + 1, got "
                 f"{replay_states.shape[0]} vs {replay_actions.shape[0]}"
             )
+        replay_isaac_rgb, replay_isaac_rgb_key = _load_replay_isaac_rgb(data)
+        if replay_isaac_rgb is not None:
+            if replay_isaac_rgb.shape[0] != replay_states.shape[0]:
+                sys.exit(
+                    f"{replay_isaac_rgb_key} length {replay_isaac_rgb.shape[0]} != "
+                    f"states length {replay_states.shape[0]}"
+                )
+            if replay_isaac_rgb.dtype != np.uint8:
+                replay_isaac_rgb = np.clip(
+                    replay_isaac_rgb.astype(np.float64), 0.0, 255.0
+                ).astype(np.uint8)
 
     # DIRECT + software camera works headless; GUI optional for debugging.
     cid = p.connect(p.GUI if args.gui else p.DIRECT)
@@ -606,10 +649,35 @@ def main() -> None:
         p.ER_TINY_RENDERER if args.renderer == "tiny" else p.ER_BULLET_HARDWARE_OPENGL
     )
 
+    use_isaac_view = False
+    use_pb_view = True
+    if replay_states is not None and replay_isaac_rgb is not None:
+        if args.replay_view == "auto" or args.replay_view == "isaac":
+            use_isaac_view = True
+            use_pb_view = False
+        elif args.replay_view == "both":
+            use_isaac_view = True
+            use_pb_view = True
+        elif args.replay_view == "pybullet":
+            use_isaac_view = False
+            use_pb_view = True
+    elif replay_states is not None and args.replay_view in ("isaac", "both"):
+        sys.exit(
+            f"--replay_view {args.replay_view!r} needs Isaac RGB in the .npz "
+            f"(dump with --save_wrist_camera or a vision BC checkpoint)."
+        )
+
     if replay_states is not None:
+        extra_v = ""
+        if replay_isaac_rgb is not None:
+            extra_v = (
+                f" | {replay_isaac_rgb_key}={replay_isaac_rgb.shape} | "
+                f"replay_view={args.replay_view}"
+            )
         print(
             f"[viz_bc_pybullet_franka] REPLAY {replay_path}\n"
-            f"  T={len(replay_actions)} | renderer={args.renderer} | ik_iter={args.ik_max_iter}",
+            f"  T={len(replay_actions)}{extra_v} | renderer={args.renderer} | "
+            f"ik_iter={args.ik_max_iter}",
             flush=True,
         )
     else:
@@ -635,7 +703,91 @@ def main() -> None:
     except Exception:
         pass
 
+    def _pybullet_scene_bgr() -> Tuple[np.ndarray, np.ndarray]:
+        cam = _cam_pos()
+        vm = p.computeViewMatrix(cam, cam_target, cam_up)
+        pm = p.computeProjectionMatrixFOV(
+            fov=60, aspect=float(width) / float(height), nearVal=0.05, farVal=10.0
+        )
+        _, _, rgb, _, _ = p.getCameraImage(
+            width,
+            height,
+            viewMatrix=vm,
+            projectionMatrix=pm,
+            renderer=renderer_flag,
+        )
+        return _pybullet_camera_to_bgr_u8(rgb, width, height), np.asarray(rgb)
+
+    def _stack_isaac_pybullet(isaac_bgr: np.ndarray, pb_bgr: np.ndarray) -> np.ndarray:
+        hi, wi = isaac_bgr.shape[:2]
+        hp, wp = pb_bgr.shape[:2]
+        new_w = max(1, int(round(wp * (hi / float(hp)))))
+        pb_r = cv2.resize(pb_bgr, (new_w, hi))
+        return np.hstack([isaac_bgr, pb_r])
+
+    def _compose_display(
+        *,
+        isaac_idx: Optional[int],
+        finger_hud_a: np.ndarray,
+        step_label: str,
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """Return (BGR for OpenCV, raw pb rgb array or empty)."""
+        pb_bgr: Optional[np.ndarray] = None
+        raw_pb = np.array([])
+        if use_pb_view or replay_actions is None:
+            pb_bgr, raw_pb = _pybullet_scene_bgr()
+        if replay_actions is not None and use_isaac_view and replay_isaac_rgb is not None:
+            assert isaac_idx is not None
+            ibgr = _u8_rgb_hwc_to_bgr(replay_isaac_rgb[isaac_idx])
+            if use_pb_view and pb_bgr is not None:
+                out = _stack_isaac_pybullet(ibgr, pb_bgr)
+            else:
+                out = ibgr
+        else:
+            assert pb_bgr is not None
+            out = pb_bgr
+
+        if finger_indices:
+            f0 = _policy_a6_to_finger_command(
+                finger_hud_a[6], finger_limits[0][0], finger_limits[0][1]
+            )
+            hud = (
+                f"{step_label} | |a|={float(np.linalg.norm(finger_hud_a)):.3f} | "
+                f"finger_cmd={f0:.4f}"
+            )
+        else:
+            hud = f"{step_label} | |a|={float(np.linalg.norm(finger_hud_a)):.3f}"
+        cv2.putText(
+            out,
+            hud,
+            (10, 28),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (0, 255, 0),
+            2,
+            cv2.LINE_AA,
+        )
+        return out, raw_pb
+
     max_steps = len(replay_actions) if replay_actions is not None else args.steps
+
+    if replay_actions is not None and use_isaac_view and replay_isaac_rgb is not None:
+        bgr0, raw0 = _compose_display(
+            isaac_idx=0,
+            finger_hud_a=np.zeros(7, dtype=np.float64),
+            step_label="init (isaac t=0)",
+        )
+        cv2.imshow("bc_pybullet_franka (q to quit)", bgr0)
+        if raw0.size > 0:
+            print(
+                f"Replay init frame. PyBullet raw camera: shape={raw0.shape} dtype={raw0.dtype}",
+                flush=True,
+            )
+        if (cv2.waitKey(1) & 0xFF) == ord("q"):
+            cv2.destroyAllWindows()
+            p.disconnect(cid)
+            return
+
     step_i = 0
     while step_i < max_steps:
         if replay_actions is not None:
@@ -668,41 +820,19 @@ def main() -> None:
             gripper_force=args.gripper_force,
         )
 
-        cam = _cam_pos()
-        vm = p.computeViewMatrix(cam, cam_target, cam_up)
-        pm = p.computeProjectionMatrixFOV(
-            fov=60, aspect=float(width) / float(height), nearVal=0.05, farVal=10.0
-        )
-        _, _, rgb, _, _ = p.getCameraImage(
-            width,
-            height,
-            viewMatrix=vm,
-            projectionMatrix=pm,
-            renderer=renderer_flag,
-        )
-        bgr = _pybullet_camera_to_bgr_u8(rgb, width, height)
-        if finger_indices:
-            f0 = _policy_a6_to_finger_command(
-                a[6], finger_limits[0][0], finger_limits[0][1]
-            )
-            hud = (
-                f"step {step_i} | |a|={float(np.linalg.norm(a)):.3f} | finger_cmd={f0:.4f}"
-            )
-        else:
-            hud = f"step {step_i} | |a|={float(np.linalg.norm(a)):.3f}"
-        cv2.putText(
-            bgr,
-            hud,
-            (10, 28),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.7,
-            (0, 255, 0),
-            2,
-            cv2.LINE_AA,
+        isaac_ix: Optional[int] = None
+        if replay_actions is not None and use_isaac_view and replay_isaac_rgb is not None:
+            isaac_ix = step_i + 1
+        elif replay_actions is None:
+            isaac_ix = None
+
+        bgr, raw = _compose_display(
+            isaac_idx=isaac_ix,
+            finger_hud_a=a,
+            step_label=f"step {step_i}",
         )
         cv2.imshow("bc_pybullet_franka (q to quit)", bgr)
-        if step_i == 0:
-            raw = np.asarray(rgb)
+        if step_i == 0 and raw.size > 0:
             print(
                 f"First frame rendered. Raw camera: shape={raw.shape} dtype={raw.dtype}",
                 flush=True,
