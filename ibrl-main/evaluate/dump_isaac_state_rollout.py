@@ -3,10 +3,15 @@
 Headless IsaacGym (TacSL bulb): run BC for one episode and save ``states`` /
 ``actions`` to a compressed ``.npz`` for offline visualization (e.g. PyBullet).
 
-Optional **Isaac wrist (or other sim) RGB** via GPU camera sensors — no Gym
-viewer. Use ``--save_wrist_camera`` for **state-only** checkpoints, or use a
-**vision BC** checkpoint (``cfg.yaml`` with ``dataset.image_keys``): cameras are
-enabled automatically and frames are saved.
+Optional **Isaac wrist (or other sim) RGB** via GPU camera sensors. Sim cameras
+need a **non-negative** ``graphics_device_id`` in ``create_sim`` (state-only
+cfgs often use ``-1``, which breaks ``create_camera_sensor``); this script bumps
+to the GPU index from ``sim_device`` (e.g. ``cuda:0`` → ``0``) when saving RGB.
+Use ``--graphics_device_id N`` to set explicitly. If headless capture still fails,
+try ``--no-headless`` (viewer on, like ``record_bc_isaac_episode.py``).
+
+Use ``--save_wrist_camera`` for **state-only** checkpoints, or a **vision BC**
+checkpoint (``cfg.yaml`` with ``dataset.image_keys``) to enable cameras automatically.
 
 Replay::
 
@@ -78,6 +83,24 @@ def _rgb_save_name(policy_cam: str) -> str:
     return f"{safe}_rgb"
 
 
+def _graphics_device_for_sim_cameras(graphics_device_id: int, sim_device: str) -> int:
+    """Isaac ``create_sim(..., graphics_device=...)`` must be a real GPU index for
+    ``create_camera_sensor`` / ``get_camera_image_gpu_tensor``. ``-1`` (common in
+    state-only cfgs) yields camera handle -1 and None tensors.
+    """
+    if graphics_device_id >= 0:
+        return graphics_device_id
+    s = (sim_device or "").strip().lower()
+    if "cuda" in s or "gpu" in s:
+        if ":" in s:
+            try:
+                return int(s.rsplit(":", 1)[-1])
+            except ValueError:
+                return 0
+        return 0
+    return 0
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description="Dump one BC Isaac rollout to .npz")
     p.add_argument("--checkpoint", required=True, help="model0.pt (cfg.yaml alongside)")
@@ -119,6 +142,13 @@ def main() -> None:
         action="store_true",
         help="VecTask force_render=True (slower; try if camera buffers stay stale).",
     )
+    p.add_argument(
+        "--no-headless",
+        "--no_headless",
+        action="store_true",
+        help="Create the Gym viewer (like record_bc_isaac_episode). Use if sim cameras "
+        "still fail headless on your driver.",
+    )
     args = p.parse_args()
 
     ckpt = os.path.abspath(args.checkpoint)
@@ -156,6 +186,19 @@ def main() -> None:
     )
     seed = int(cfg_y.get("seed", 0)) if args.seed < 0 else args.seed
     mel = None if args.max_episode_length <= 0 else int(args.max_episode_length)
+
+    want_rgb = vision or args.save_wrist_camera
+    headless = not bool(args.no_headless)
+    if want_rgb:
+        gdev_resolved = _graphics_device_for_sim_cameras(gdev, sim_dev)
+        if gdev_resolved != gdev:
+            print(
+                "[dump_isaac_state_rollout] GPU sim cameras need graphics_device_id>=0 in "
+                f"create_sim; using {gdev_resolved} (was {gdev}). Override with "
+                "--graphics_device_id N.",
+                flush=True,
+            )
+        gdev = gdev_resolved
 
     device = torch.device(rl_dev if torch.cuda.is_available() else "cpu")
     action_scale: Optional[torch.Tensor] = None
@@ -216,7 +259,7 @@ def main() -> None:
         sim_device=sim_dev,
         rl_device=rl_dev,
         graphics_device_id=gdev,
-        headless=True,
+        headless=headless,
         seed=seed,
         max_episode_length=mel,
         extra_overrides=extra_overrides,
@@ -226,8 +269,6 @@ def main() -> None:
     states: List[np.ndarray] = []
     actions: List[np.ndarray] = []
     rgb_frames: List[np.ndarray] = []
-
-    want_rgb = vision or args.save_wrist_camera
 
     obs = env.reset()
     states.append(obs["state"][0].detach().cpu().numpy().astype(np.float32))
