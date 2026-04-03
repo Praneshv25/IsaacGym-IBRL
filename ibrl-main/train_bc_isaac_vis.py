@@ -72,8 +72,8 @@ import gc
 import os
 import random
 import sys
-from dataclasses import dataclass, field, replace
-from typing import List, Optional, Tuple
+from dataclasses import dataclass, field, fields, replace
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pyrallis
@@ -83,6 +83,8 @@ import yaml
 import common_utils
 from bc.bc_policy import BcPolicy, BcPolicyConfig
 from bc.isaac_dataset import ACTION_DIM, LIVE_STATE_DIM, IsaacDatasetConfig, IsaacPklDataset
+from bc.multiview_encoder import FuseMethod, MultiViewEncoderConfig
+from networks.encoder import ResNetEncoderConfig
 from common_utils import ibrl_utils as utils
 
 
@@ -129,13 +131,83 @@ class MainConfig(common_utils.RunConfig):
         self.action_dim: int = ACTION_DIM
 
 
+def _pick_keys(d: Dict[str, Any], cls) -> Dict[str, Any]:
+    """Subset *d* to dataclass *cls* field names (ignore unknown YAML keys)."""
+    valid = {f.name for f in fields(cls)}
+    return {k: v for k, v in d.items() if k in valid}
+
+
+def _resnet_encoder_cfg_from_dict(d: object) -> ResNetEncoderConfig:
+    if not isinstance(d, dict):
+        return ResNetEncoderConfig()
+    return ResNetEncoderConfig(**_pick_keys(d, ResNetEncoderConfig))
+
+
+def _multiview_encoder_cfg_from_dict(d: object) -> MultiViewEncoderConfig:
+    if not isinstance(d, dict):
+        return MultiViewEncoderConfig()
+    d = dict(d)
+    resnet_raw = d.pop("resnet", None)
+    resnet = _resnet_encoder_cfg_from_dict(resnet_raw)
+    fuse_raw = d.pop("fuse_method", "cat")
+    if isinstance(fuse_raw, FuseMethod):
+        fuse = fuse_raw
+    else:
+        fuse = FuseMethod(str(fuse_raw))
+    rest = _pick_keys(d, MultiViewEncoderConfig)
+    rest.pop("resnet", None)
+    rest.pop("fuse_method", None)
+    return MultiViewEncoderConfig(fuse_method=fuse, resnet=resnet, **rest)
+
+
+def _bc_policy_cfg_from_dict(d: object) -> BcPolicyConfig:
+    if not isinstance(d, dict):
+        return BcPolicyConfig()
+    d = dict(d)
+    enc_raw = d.pop("encoder", None)
+    encoder = (
+        _multiview_encoder_cfg_from_dict(enc_raw)
+        if enc_raw is not None
+        else MultiViewEncoderConfig()
+    )
+    rest = _pick_keys(d, BcPolicyConfig)
+    rest.pop("encoder", None)
+    return BcPolicyConfig(encoder=encoder, **rest)
+
+
+def _isaac_dataset_cfg_from_dict(d: object) -> IsaacDatasetConfig:
+    if not isinstance(d, dict):
+        return IsaacDatasetConfig()
+    return IsaacDatasetConfig(**_pick_keys(d, IsaacDatasetConfig))
+
+
+def load_main_config_from_cfg_yaml(cfg_path: str) -> MainConfig:
+    """Instantiate ``MainConfig`` from ``cfg.yaml`` using PyYAML only.
+
+    Avoids ``pyrallis.load``, which can fail on Python 3.8 with
+    ``typing-inspect`` (e.g. weakref errors on ``str`` / nested fields).
+    """
+    with open(cfg_path, "r") as f:
+        raw = yaml.safe_load(f)
+    if not isinstance(raw, dict):
+        raise ValueError(f"{cfg_path}: expected a YAML mapping at the top level")
+
+    raw = dict(raw)
+    dataset_raw = raw.pop("dataset", None) or {}
+    policy_raw = raw.pop("policy", None) or {}
+    dataset_cfg = _isaac_dataset_cfg_from_dict(dataset_raw)
+    policy_cfg = _bc_policy_cfg_from_dict(policy_raw)
+    top = _pick_keys(raw, MainConfig)
+    return MainConfig(dataset=dataset_cfg, policy=policy_cfg, **top)
+
+
 def load_bc_policy_vis(
     weight_file: str, device: str
 ) -> Tuple[BcPolicy, Optional[torch.Tensor]]:
     """Load a ``BcPolicy`` checkpoint saved by this script."""
     run_folder = os.path.dirname(weight_file)
     cfg_path = os.path.join(run_folder, "cfg.yaml")
-    cfg: MainConfig = pyrallis.load(MainConfig, open(cfg_path))  # type: ignore
+    cfg = load_main_config_from_cfg_yaml(cfg_path)
 
     dataset = IsaacPklDataset(cfg.dataset)
     policy = BcPolicy(
