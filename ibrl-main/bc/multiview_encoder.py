@@ -1,4 +1,5 @@
-# from __future__ import annotations
+from __future__ import annotations
+from typing import Any
 from dataclasses import dataclass, field
 import torch
 import torch.nn as nn
@@ -7,8 +8,8 @@ from networks.encoder import ResNetEncoder, ResNetEncoderConfig
 
 @dataclass
 class MultiViewEncoderConfig:
-    fuse_method: str = "cat"
-    resnet: ResNetEncoderConfig = field(default_factory=lambda: ResNetEncoderConfig())
+    fuse_method: Any = 'cat'
+    resnet: Any = field(default_factory=lambda: ResNetEncoderConfig())
     feat_dim: int = 512
     dropout: float = 0
 

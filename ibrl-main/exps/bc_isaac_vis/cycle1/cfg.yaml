@@ -26,7 +26,7 @@ policy:
   encoder:
     dropout: 0
     feat_dim: 512
-    fuse_method: cat
+    fuse_method: !!str cat
     resnet:
       downsample: default
       norm_layer: gnn
