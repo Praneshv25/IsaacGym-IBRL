@@ -1,21 +1,30 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Literal
+from enum import Enum
 
 import torch
 import torch.nn as nn
 from networks.encoder import ResNetEncoder, ResNetEncoderConfig
 
-FuseMethod = Literal["cat", "add", "mult"]
+
+class FuseMethod(str, Enum):
+    """String enum so YAML/pyrallis can load ``cat`` / ``add`` / ``mult`` without ``str`` weakref bugs."""
+
+    cat = "cat"
+    add = "add"
+    mult = "mult"
 
 
 @dataclass
 class MultiViewEncoderConfig:
-    # Literal (not str) avoids pyrallis/typing-inspect weakref errors on Python 3.8.
-    fuse_method: FuseMethod = "cat"
+    fuse_method: FuseMethod = FuseMethod.cat
     resnet: ResNetEncoderConfig = field(default_factory=lambda: ResNetEncoderConfig())
     feat_dim: int = 512
     dropout: float = 0
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.fuse_method, FuseMethod):
+            self.fuse_method = FuseMethod(self.fuse_method)
 
 
 class MultiViewEncoder(nn.Module):
