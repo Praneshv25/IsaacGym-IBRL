@@ -75,7 +75,9 @@ def _vision_hydra_overrides(
         if name in seen:
             continue
         seen.add(name)
-        ovr.append(f"task.env.obsDims.{name}=[{int(h)},{int(w)},3]")
+        # Some camera keys (e.g. wrist_2) are not present in the base Hydra config.
+        # Use `+` so OmegaConf/Hydra can append new obsDims entries under struct mode.
+        ovr.append(f"+task.env.obsDims.{name}=[{int(h)},{int(w)},3]")
     return ovr
 
 
