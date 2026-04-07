@@ -205,13 +205,11 @@ def main() -> None:
     device = torch.device(rl_dev if torch.cuda.is_available() else "cpu")
     image_keys = _image_keys_from_cfg_yaml(cfg_y)
     vision = len(image_keys) > 0
-    action_scale: Optional[torch.Tensor] = None
-
     if vision:
         from train_bc_isaac_vis import load_bc_policy_vis
 
         try:
-            policy, action_scale = load_bc_policy_vis(ckpt, str(device))
+            policy, _ = load_bc_policy_vis(ckpt, str(device))
         except Exception as e:
             sys.exit(
                 f"Failed to load vision BC policy (needs train_bc_isaac_vis cfg + dataset path). "
@@ -278,10 +276,6 @@ def main() -> None:
                 actions = policy.act(obs, eval_mode=True, cpu=False)
             else:
                 actions = policy.act(obs, eval_mode=True, stddev=0.0, cpu=False)
-
-            if action_scale is not None:
-                sc = action_scale.to(actions.device, dtype=actions.dtype).view(1, -1)
-                actions = actions * sc
 
             obs, _rew, dones, successes = env.step(actions)
 
