@@ -39,6 +39,7 @@ import isaacgym  # noqa: E402, F401
 import imageio.v2 as imageio  # noqa: E402
 import numpy as np  # noqa: E402
 import torch  # noqa: E402
+import torch.nn.functional as F  # noqa: E402
 
 from env.isaac_gym_wrapper import OBS_KEYS, IsaacGymBulbEnv  # noqa: E402
 from evaluate.eval_bc_isaac_min import _build_policy, _load_cfg  # noqa: E402
@@ -155,6 +156,45 @@ def _policy_obs_from_ig(
     return out
 
 
+def _isaac_frame_u8_hwc(env: IsaacGymBulbEnv, isaac_key: str) -> np.ndarray:
+    """One env's RGB from ``obs_dict`` as uint8 ``(H, W, 3)``."""
+    ig = env.ig_env
+    if isaac_key not in ig.obs_dict:
+        sys.exit(
+            f"Isaac obs_dict has no key {isaac_key!r}. Keys: {sorted(ig.obs_dict.keys())}"
+        )
+    raw = ig.obs_dict[isaac_key]
+    if raw.dim() != 4:
+        sys.exit(f"Expected {isaac_key} (N,H,W,C), got {tuple(raw.shape)}")
+    x = raw[0].detach().cpu().numpy()
+    if x.dtype == np.uint8:
+        return x
+    xf = x.astype(np.float32)
+    if float(xf.max()) <= 1.01:
+        xf = xf * 255.0
+    return np.clip(xf, 0.0, 255.0).astype(np.uint8)
+
+
+def _resize_u8_hwc(img: np.ndarray, out_h: int) -> np.ndarray:
+    """Resize uint8 HWC image to a target height, preserving aspect ratio."""
+    h, w = int(img.shape[0]), int(img.shape[1])
+    if h == out_h:
+        return img
+    out_w = max(1, int(round(w * (out_h / max(h, 1)))))
+    ten = torch.from_numpy(img).permute(2, 0, 1).unsqueeze(0).float()
+    ten = F.interpolate(ten, size=(out_h, out_w), mode="bilinear", align_corners=False)
+    out = ten.squeeze(0).permute(1, 2, 0).clamp(0, 255).byte().cpu().numpy()
+    return out
+
+
+def _composite_viewer_and_camera(viewer_rgb: np.ndarray, cam_rgb: np.ndarray) -> np.ndarray:
+    """Horizontally concatenate viewer and policy camera frames."""
+    target_h = max(int(viewer_rgb.shape[0]), int(cam_rgb.shape[0]))
+    viewer = _resize_u8_hwc(viewer_rgb, target_h)
+    cam = _resize_u8_hwc(cam_rgb, target_h)
+    return np.concatenate([viewer, cam], axis=1)
+
+
 def main() -> None:
     p = argparse.ArgumentParser(description="Record one BC episode (IsaacGym bulb) to MP4")
     p.add_argument("--checkpoint", required=True, help="model0.pt (cfg.yaml alongside)")
@@ -220,6 +260,8 @@ def main() -> None:
         cli_map = _parse_cam_alias_args(list(args.isaac_camera_policy))
         pol_to_isaac = _build_policy_to_isaac_map(policy.rl_cameras, (h, w), cli_map)
         isaac_obs_dims = [(pol_to_isaac[c], h, w) for c in policy.rl_cameras]
+        primary_cam = policy.rl_cameras[0]
+        isaac_primary_cam = pol_to_isaac[primary_cam]
         extra = _vision_hydra_overrides(isaac_obs_dims)
         print(
             f"[record_bc_isaac_episode] vision BC | rl_cameras={policy.rl_cameras} | "
@@ -265,7 +307,13 @@ def main() -> None:
             "capture_viewer_frame() returned None (no viewer). "
             "Use a machine with a display or --virtual_display."
         )
-    frames.append(np.asarray(img0))
+    frame0 = np.asarray(img0)
+    if vision:
+        frame0 = _composite_viewer_and_camera(
+            frame0,
+            _isaac_frame_u8_hwc(env, isaac_primary_cam),
+        )
+    frames.append(frame0)
 
     with torch.no_grad():
         while True:
@@ -284,7 +332,13 @@ def main() -> None:
 
             img = env.capture_viewer_frame()
             if img is not None:
-                frames.append(np.asarray(img))
+                frame = np.asarray(img)
+                if vision:
+                    frame = _composite_viewer_and_camera(
+                        frame,
+                        _isaac_frame_u8_hwc(env, isaac_primary_cam),
+                    )
+                frames.append(frame)
             if bool(dones[0].item()):
                 ok = bool(successes[0].item())
                 print(
