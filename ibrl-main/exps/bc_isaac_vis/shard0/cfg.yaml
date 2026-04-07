@@ -7,7 +7,7 @@ dataset:
   max_episodes: -1
   max_len: -1
   normalize_actions: true
-  path: /home/pvelmuru/projects/shard0
+  path: /home/capstonepc/Desktop/IBRL/MarsLab_OfflineRL_Feb_Screw
   use_default_socket_pad: true
 epoch_len: 1000
 eval_with_env: 0
