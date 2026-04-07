@@ -203,6 +203,12 @@ def main() -> None:
     p.add_argument("--max_episode_length", type=int, default=1000)
     p.add_argument("--fps", type=int, default=30)
     p.add_argument(
+        "--log_every",
+        type=int,
+        default=100,
+        help="Print rollout progress every N env steps (0 disables).",
+    )
+    p.add_argument(
         "--virtual_display",
         action="store_true",
         help="Use pyvirtualdisplay (for headless servers; install pyvirtualdisplay)",
@@ -315,6 +321,7 @@ def main() -> None:
         )
     frames.append(frame0)
 
+    step_idx = 0
     with torch.no_grad():
         while True:
             if vision:
@@ -339,11 +346,18 @@ def main() -> None:
                         _isaac_frame_u8_hwc(env, isaac_primary_cam),
                     )
                 frames.append(frame)
+            step_idx += 1
+            if args.log_every > 0 and step_idx % args.log_every == 0:
+                print(
+                    f"[record_bc_isaac_episode] step={step_idx} / "
+                    f"max_episode_length={env.max_episode_length}",
+                    flush=True,
+                )
             if bool(dones[0].item()):
                 ok = bool(successes[0].item())
                 print(
                     f"[record_bc_isaac_episode] episode ended | success={ok} | "
-                    f"frames={len(frames)}",
+                    f"steps={step_idx} | frames={len(frames)}",
                     flush=True,
                 )
                 break
