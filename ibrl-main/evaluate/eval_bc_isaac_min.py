@@ -46,6 +46,21 @@ _OBS_DIM = 14
 _ACTION_DIM = 7
 
 
+def _image_keys_from_cfg_yaml(cfg_y: dict) -> List[str]:
+    ds = cfg_y.get("dataset") or {}
+    if not isinstance(ds, dict):
+        return []
+    ik = ds.get("image_keys") or []
+    if isinstance(ik, str) and ik.strip():
+        return [ik.strip()]
+    if isinstance(ik, list):
+        return [str(x).strip() for x in ik if str(x).strip()]
+    csv = (ds.get("image_keys_csv") or "").strip()
+    if csv:
+        return [k.strip() for k in csv.split(",") if k.strip()]
+    return []
+
+
 # ---------------------------------------------------------------------------
 # Inlined from ``bc/bc_policy.StateBcPolicy`` (state-only BC)
 # ---------------------------------------------------------------------------
@@ -215,6 +230,86 @@ def run_bc_eval_isaac(
     return scores
 
 
+def run_bc_eval_isaac_vision(
+    env: IsaacGymBulbEnv,
+    agent: nn.Module,
+    num_episodes: int,
+    *,
+    policy_obs_fn,
+    verbose: bool = True,
+    log_every: int = 200,
+) -> List[float]:
+    scores: List[float] = []
+    episode_rewards: List[float] = []
+
+    running_reward = torch.zeros(env.num_envs, device=env.device)
+    if verbose:
+        print("[eval_bc_isaac_min] env.reset() ...", flush=True)
+    env.reset()
+    obs = policy_obs_fn(env, agent)
+    if verbose:
+        print(
+            f"[eval_bc_isaac_min] env.reset() done | max_episode_length={env.max_episode_length} | "
+            f"num_envs={env.num_envs} | need {num_episodes} completed episodes",
+            flush=True,
+        )
+        if log_every > 0:
+            print(
+                f"[eval_bc_isaac_min] progress every {log_every} sim steps "
+                f"(episode lines only when an env finishes)",
+                flush=True,
+            )
+
+    sim_step = 0
+    with torch.no_grad(), _EvalMode(agent):
+        while len(scores) < num_episodes:
+            actions = agent.act(obs, eval_mode=True, cpu=False)
+            _state_obs, rewards, dones, successes = env.step(actions)
+            sim_step += 1
+
+            if verbose and log_every > 0 and sim_step % log_every == 0:
+                emin = int(env._episode_step.min().item())
+                emax = int(env._episode_step.max().item())
+                print(
+                    f"[eval_bc_isaac_min] sim_step={sim_step} | "
+                    f"episodes_done={len(scores)}/{num_episodes} | "
+                    f"episode_step min/max={emin}/{emax}",
+                    flush=True,
+                )
+
+            running_reward += rewards
+            obs = policy_obs_fn(env, agent)
+
+            done_ids = dones.nonzero(as_tuple=False).squeeze(-1)
+            for idx in done_ids.tolist():
+                if len(scores) >= num_episodes:
+                    break
+                success = bool(successes[idx].item())
+                scores.append(float(success))
+                episode_rewards.append(float(running_reward[idx].item()))
+                running_reward[idx] = 0.0
+
+                if verbose:
+                    ep_num = len(scores)
+                    print(
+                        f"  eval episode {ep_num:3d}/{num_episodes} | "
+                        f"env {idx:3d} | "
+                        f"success: {success} | "
+                        f"reward: {episode_rewards[-1]:.4f}"
+                    )
+
+    if verbose:
+        mean_success = float(np.mean(scores))
+        mean_reward = float(np.mean(episode_rewards))
+        print(
+            f"Eval done: {num_episodes} episodes | "
+            f"success rate: {mean_success:.2%} | "
+            f"mean reward: {mean_reward:.4f}"
+        )
+
+    return scores
+
+
 def _load_cfg(path: str) -> dict:
     with open(path, "r") as f:
         d = yaml.safe_load(f)
@@ -255,6 +350,13 @@ def main() -> None:
     p.add_argument("--graphics_device_id", type=int, default=-999)
     p.add_argument("--headless", type=int, default=-1)
     p.add_argument("--seed", type=int, default=-1)
+    p.add_argument(
+        "--isaac_camera_policy",
+        action="append",
+        default=[],
+        metavar="POLICY_CAM:ISAAC_KEY",
+        help="Repeatable. Map training image key to Isaac obs key (vision BC).",
+    )
     p.add_argument(
         "--log_every",
         type=int,
@@ -297,7 +399,41 @@ def main() -> None:
     seed = int(cfg_y.get("seed", 0)) if args.seed < 0 else args.seed
 
     device = torch.device(rl_dev if torch.cuda.is_available() else "cpu")
-    policy = _build_policy(cfg_y, ckpt, device)
+    vision = len(_image_keys_from_cfg_yaml(cfg_y)) > 0
+    extra_overrides = None
+    policy_obs_fn = None
+
+    if vision:
+        from evaluate.record_bc_isaac_episode import (
+            _build_policy_to_isaac_map,
+            _parse_cam_alias_args,
+            _policy_obs_from_ig,
+            _vision_hydra_overrides,
+        )
+        from train_bc_isaac_vis import load_bc_policy_vis
+
+        try:
+            policy, _ = load_bc_policy_vis(ckpt, str(device))
+        except Exception as e:
+            sys.exit(
+                f"Failed to load vision BC policy (needs train_bc_isaac_vis cfg + dataset path). "
+                f"Original error: {e}"
+            )
+
+        h, w = int(policy.encoder.obs_shape[1]), int(policy.encoder.obs_shape[2])
+        cli_map = _parse_cam_alias_args(list(args.isaac_camera_policy))
+        pol_to_isaac = _build_policy_to_isaac_map(policy.rl_cameras, (h, w), cli_map)
+        isaac_obs_dims = [(pol_to_isaac[c], h, w) for c in policy.rl_cameras]
+        extra_overrides = _vision_hydra_overrides(isaac_obs_dims)
+        extra_overrides.append("task.env.enableCameraSensors=true")
+        policy_obs_fn = lambda env_, policy_: _policy_obs_from_ig(env_, policy_, pol_to_isaac)
+        print(
+            f"[eval_bc_isaac_min] vision BC | rl_cameras={policy.rl_cameras} | "
+            f"obs_shape=(3,{h},{w}) | policy→isaac map={pol_to_isaac}",
+            flush=True,
+        )
+    else:
+        policy = _build_policy(cfg_y, ckpt, device)
 
     scale_pt = os.path.join(run_dir, "action_scale.pt")
     if os.path.isfile(scale_pt):
@@ -320,17 +456,29 @@ def main() -> None:
         headless=headless,
         seed=seed,
         max_episode_length=mel,
+        extra_overrides=extra_overrides,
     )
     print(env)
 
-    scores = run_bc_eval_isaac(
-        env,
-        policy,
-        args.num_episodes,
-        verbose=True,
-        stddev=0.0,
-        log_every=args.log_every,
-    )
+    if vision:
+        assert policy_obs_fn is not None
+        scores = run_bc_eval_isaac_vision(
+            env,
+            policy,
+            args.num_episodes,
+            policy_obs_fn=policy_obs_fn,
+            verbose=True,
+            log_every=args.log_every,
+        )
+    else:
+        scores = run_bc_eval_isaac(
+            env,
+            policy,
+            args.num_episodes,
+            verbose=True,
+            stddev=0.0,
+            log_every=args.log_every,
+        )
     print(f"[eval_bc_isaac_min] mean success: {float(np.mean(scores)):.4f}")
 
 
