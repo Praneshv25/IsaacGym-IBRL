@@ -1,5 +1,6 @@
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import Dict
 
 import torch
 import torch.nn as nn
@@ -65,7 +66,7 @@ class MultiViewEncoder(nn.Module):
             assert len(prop_shape) == 1
             self.repr_dim += prop_shape[0]
 
-    def forward(self, obs: dict[str, torch.Tensor]):
+    def forward(self, obs: Dict[str, torch.Tensor]):
         hs = []
         for i, camera in enumerate(self.rl_cameras):
             x = obs[camera]
