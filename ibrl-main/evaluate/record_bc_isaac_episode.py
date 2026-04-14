@@ -41,7 +41,7 @@ import numpy as np  # noqa: E402
 import torch  # noqa: E402
 import torch.nn.functional as F  # noqa: E402
 
-from env.isaac_gym_wrapper import OBS_KEYS, IsaacGymBulbEnv  # noqa: E402
+from env.isaac_gym_wrapper import IsaacGymBulbEnv  # noqa: E402
 from evaluate.eval_bc_isaac_min import _build_policy, _load_cfg  # noqa: E402
 
 
@@ -116,9 +116,16 @@ def _build_policy_to_isaac_map(
     return m
 
 
-def _state_vec_from_ig(env: IsaacGymBulbEnv) -> torch.Tensor:
-    parts = [env.ig_env.obs_dict[k] for k in OBS_KEYS]
-    return torch.cat(parts, dim=-1).float()
+def _prop_vec_from_ig(env: IsaacGymBulbEnv, prop_dim: int) -> torch.Tensor:
+    ee_pos = env.ig_env.obs_dict["ee_pos"]
+    ee_quat = env.ig_env.obs_dict["ee_quat"]
+    ee = torch.cat([ee_pos, ee_quat], dim=-1).float()
+    if prop_dim == 7:
+        return ee
+    if prop_dim == 14:
+        socket_pad = torch.zeros((ee_pos.size(0), 7), device=ee_pos.device, dtype=torch.float32)
+        return torch.cat([ee, socket_pad], dim=-1).float()
+    raise ValueError(f"Unsupported vision prop dim: {prop_dim}")
 
 
 def _policy_obs_from_ig(
@@ -135,7 +142,12 @@ def _policy_obs_from_ig(
     out: Dict[str, torch.Tensor] = {}
 
     if policy.cfg.use_prop:
-        out["prop"] = _state_vec_from_ig(env).to(dev)
+        prop_shape = getattr(policy, "prop_shape", None)
+        if prop_shape is None:
+            prop_dim = 14
+        else:
+            prop_dim = int(prop_shape[0])
+        out["prop"] = _prop_vec_from_ig(env, prop_dim).to(dev)
 
     for pol_cam in policy.rl_cameras:
         ik = policy_to_isaac[pol_cam]
@@ -207,6 +219,12 @@ def main() -> None:
         type=int,
         default=100,
         help="Print rollout progress every N env steps (0 disables).",
+    )
+    p.add_argument(
+        "--debug_action_every",
+        type=int,
+        default=100,
+        help="Print the action vector every N env steps (0 disables).",
     )
     p.add_argument(
         "--virtual_display",
@@ -351,6 +369,15 @@ def main() -> None:
                 print(
                     f"[record_bc_isaac_episode] step={step_idx} / "
                     f"max_episode_length={env.max_episode_length}",
+                    flush=True,
+                )
+            if args.debug_action_every > 0 and step_idx % args.debug_action_every == 0:
+                a0 = actions[0].detach().cpu().numpy().astype(float)
+                motion_norm = float(np.linalg.norm(a0[:6]))
+                print(
+                    f"[record_bc_isaac_episode] action step={step_idx} | "
+                    f"a={np.array2string(a0, precision=4, suppress_small=True)} | "
+                    f"motion_norm={motion_norm:.4f}",
                     flush=True,
                 )
             if bool(dones[0].item()):

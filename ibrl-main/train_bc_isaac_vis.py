@@ -14,8 +14,9 @@ Camera keys must match each transition's ``obs``. Prefer
 ``--dataset.image_keys_csv wrist`` on the CLI — pyrallis often fails to parse
 ``--dataset.image_keys wrist`` for ``List[str]``. Alternatively use
 ``--dataset.image_keys[0] wrist`` or a YAML config. Images are uint8
-``(C, H, W)``; with ``--policy.use_prop 1``, proprio is the same 14-D padded
-state as ``train_bc_isaac.py``.
+``(C, H, W)``; with ``--policy.use_prop 1``, proprio defaults to the same
+legacy 14-D padded state as ``train_bc_isaac.py``. For cleaner vision BC on
+datasets that only store EE state, prefer ``--dataset.image_prop_mode ee7``.
 
 **Live IsaacGym evaluation** (``eval_with_env=1``) is **not** supported here:
 ``IsaacGymBulbEnv`` is state-only. Use training / val loss, or add a
@@ -33,10 +34,11 @@ transitions; ``obs`` includes ``state`` ``(1,7)`` float32, ``wrist``
 
 Examples::
 
-    # wrist + 14-D proprio (recommended)
+    # wrist + 7-D EE proprio (recommended)
     python train_bc_isaac_vis.py \\
         --dataset.path "/path/to/data.pkl_or_folder" \\
         --dataset.image_keys_csv wrist \\
+        --dataset.image_prop_mode ee7 \\
         --policy.use_prop 1 \\
         --save_dir exps/bc_isaac_vis/run1
 
@@ -230,6 +232,7 @@ def load_bc_policy_vis(
         rl_cameras=dataset.rl_cameras,
         cfg=cfg.policy,
     )
+    policy.prop_shape = dataset.prop_shape
     policy.load_state_dict(torch.load(weight_file, map_location=device))
     policy.to(device)
     policy.train(False)

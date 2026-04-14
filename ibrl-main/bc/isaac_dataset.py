@@ -154,6 +154,11 @@ class IsaacDatasetConfig:
         camera names (e.g. ``wrist`` or ``cam_a,cam_b``). If non-empty after
         stripping, it **replaces** ``image_keys`` after init — use this when
         pyrallis fails to parse ``--dataset.image_keys ...`` for a list.
+    image_prop_mode:
+        For vision BC only, controls what goes into ``prop``:
+        ``"padded14"`` keeps the legacy 14-D padded state
+        ``"ee7"`` uses only the raw 7-D end-effector state from the dataset.
+        State-only BC ignores this and always uses the padded 14-D state.
     """
 
     path: str = ""
@@ -166,6 +171,7 @@ class IsaacDatasetConfig:
     fixed_action_scale_path: str = ""
     image_keys: List[str] = field(default_factory=list)
     image_keys_csv: str = ""
+    image_prop_mode: str = "padded14"
 
     def __post_init__(self) -> None:
         csv = (self.image_keys_csv or "").strip()
@@ -174,6 +180,11 @@ class IsaacDatasetConfig:
         fix = (self.fixed_action_scale_path or "").strip()
         if fix:
             self.action_scale_path = fix
+        self.image_prop_mode = str(self.image_prop_mode or "padded14").strip().lower()
+        if self.image_prop_mode not in ("padded14", "ee7"):
+            raise ValueError(
+                f"image_prop_mode must be 'padded14' or 'ee7', got {self.image_prop_mode!r}"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -417,7 +428,7 @@ class IsaacPklDataset:
                         print(f"  obs keys (sample transition): {list(odict.keys())}")
                         printed_obs_keys = True
                     entry: Dict[str, torch.Tensor] = {
-                        "prop": state_14d,
+                        "prop": state_14d if cfg.image_prop_mode == "padded14" else state_7d,
                         "action": action_t,
                     }
                     for ik in image_keys:
@@ -454,7 +465,7 @@ class IsaacPklDataset:
             ref = ref0[self.rl_cameras[0]]
             c, h, w = int(ref.shape[0]), int(ref.shape[1]), int(ref.shape[2])
             self.obs_shape = (c, h, w)
-            self.prop_shape = (LIVE_STATE_DIM,)
+            self.prop_shape = tuple(ref0["prop"].shape)
             for k in self.rl_cameras:
                 t = ref0[k]
                 if tuple(t.shape) != (c, h, w):
@@ -462,7 +473,10 @@ class IsaacPklDataset:
                         f"image shape for camera '{k}' {tuple(t.shape)} "
                         f"!= reference {(c, h, w)}"
                     )
-            print(f"  vision mode        : rl_cameras={self.rl_cameras}, obs_shape={self.obs_shape}")
+            print(
+                f"  vision mode        : rl_cameras={self.rl_cameras}, "
+                f"obs_shape={self.obs_shape}, prop_shape={self.prop_shape}"
+            )
         else:
             self.rl_cameras = []
             self.obs_shape = (LIVE_STATE_DIM,)
