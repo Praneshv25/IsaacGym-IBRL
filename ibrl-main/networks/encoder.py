@@ -51,7 +51,8 @@ class VitEncoderConfig:
     depth: int = 3
     embed_dim: int = 128
     num_heads: int = 4
-    act_layer = nn.GELU
+    # Keep parser-friendly scalar fields only; MinVit wiring here does not
+    # currently consume `act_layer` anyway.
     stride: int = -1
     embed_style: str = "embed1"
     embed_norm: int = 0
@@ -106,7 +107,7 @@ class ResNetEncoder(nn.Module):
         )
         self.repr_dim, self.num_patch, self.patch_repr_dim = self._get_repr_dim(obs_shape)
 
-    def _get_repr_dim(self, obs_shape: list[int]):
+    def _get_repr_dim(self, obs_shape: List[int]):
         x = torch.rand(1, *obs_shape)
         y = self.nets.forward(x).flatten(2, 3)
         repr_dim = y.flatten().size(0)
