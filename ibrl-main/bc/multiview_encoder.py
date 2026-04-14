@@ -17,14 +17,16 @@ class FuseMethod(str, Enum):
 
 @dataclass
 class MultiViewEncoderConfig:
-    fuse_method: FuseMethod = FuseMethod.cat
+    # Keep this as a plain string so pyrallis/argparse can parse CLI flags.
+    # __post_init__ normalizes it back to the enum for internal use.
+    fuse_method: str = FuseMethod.cat.value
     resnet: ResNetEncoderConfig = field(default_factory=lambda: ResNetEncoderConfig())
     feat_dim: int = 512
     dropout: float = 0
 
     def __post_init__(self) -> None:
         if not isinstance(self.fuse_method, FuseMethod):
-            self.fuse_method = FuseMethod(self.fuse_method)
+            self.fuse_method = FuseMethod(str(self.fuse_method))
 
 
 class MultiViewEncoder(nn.Module):
