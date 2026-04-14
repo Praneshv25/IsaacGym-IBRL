@@ -1,5 +1,5 @@
-from __future__ import annotations
 from dataclasses import dataclass, field
+from typing import List
 import torch
 from torch import nn
 
@@ -16,13 +16,13 @@ class ResNet96EncoderConfig:
 
 
 class ResNet96Encoder(nn.Module):
-    def __init__(self, obs_shape: list[int], cfg: ResNet96EncoderConfig):
+    def __init__(self, obs_shape: List[int], cfg: ResNet96EncoderConfig):
         super().__init__()
 
         self.resnet = ResNet96(obs_shape[0], cfg.use_1x1, cfg.shallow)
         self.repr_dim, self.num_patch, self.patch_repr_dim = self._get_repr_dim(obs_shape)
 
-    def _get_repr_dim(self, obs_shape: list[int]):
+    def _get_repr_dim(self, obs_shape: List[int]):
         x = torch.rand(1, *obs_shape)
         y = self.resnet.forward(x).flatten(2, 3)
         repr_dim = y.flatten().size(0)
@@ -58,7 +58,7 @@ class VitEncoderConfig:
 
 
 class VitEncoder(nn.Module):
-    def __init__(self, obs_shape: list[int], cfg: VitEncoderConfig):
+    def __init__(self, obs_shape: List[int], cfg: VitEncoderConfig):
         super().__init__()
         self.obs_shape = obs_shape
         self.cfg = cfg
@@ -168,7 +168,7 @@ if __name__ == "__main__":
     @dataclass
     class MainConfig:
         net_type: str
-        obs_shape: list[int] = field(default_factory=lambda: [3, 96, 96])
+        obs_shape: List[int] = field(default_factory=lambda: [3, 96, 96])
         resnet: ResNetEncoderConfig = field(default_factory=lambda: ResNetEncoderConfig())
         vit: VitEncoderConfig = field(default_factory=lambda: VitEncoderConfig())
 
