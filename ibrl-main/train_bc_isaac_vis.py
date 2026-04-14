@@ -152,10 +152,7 @@ def _multiview_encoder_cfg_from_dict(d: object) -> MultiViewEncoderConfig:
     resnet_raw = d.pop("resnet", None)
     resnet = _resnet_encoder_cfg_from_dict(resnet_raw)
     fuse_raw = d.pop("fuse_method", "cat")
-    if isinstance(fuse_raw, FuseMethod):
-        fuse = fuse_raw
-    else:
-        fuse = FuseMethod(str(fuse_raw))
+    fuse = FuseMethod(str(fuse_raw)).value
     rest = _pick_keys(d, MultiViewEncoderConfig)
     rest.pop("resnet", None)
     rest.pop("fuse_method", None)
