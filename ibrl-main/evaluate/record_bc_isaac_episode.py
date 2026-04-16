@@ -235,6 +235,12 @@ def main() -> None:
     p.add_argument("--rl_device", default="")
     p.add_argument("--graphics_device_id", type=int, default=0)
     p.add_argument("--seed", type=int, default=-1)
+    p.add_argument("--socket_pos_initial_x", type=float, default=0.5)
+    p.add_argument("--socket_pos_initial_y", type=float, default=0.0)
+    p.add_argument("--socket_pos_initial_z", type=float, default=0.02)
+    p.add_argument("--socket_rot_initial_x", type=float, default=0.0)
+    p.add_argument("--socket_rot_initial_y", type=float, default=0.0)
+    p.add_argument("--socket_rot_initial_z", type=float, default=0.0)
     p.add_argument("--socket_pos_noise_x", type=float, default=-1.0)
     p.add_argument("--socket_pos_noise_y", type=float, default=-1.0)
     p.add_argument("--socket_pos_noise_z", type=float, default=-1.0)
@@ -311,6 +317,16 @@ def main() -> None:
             args.socket_pos_noise_y,
             args.socket_pos_noise_z,
         )
+    socket_pos_initial = (
+        args.socket_pos_initial_x,
+        args.socket_pos_initial_y,
+        args.socket_pos_initial_z,
+    )
+    socket_rot_initial = (
+        args.socket_rot_initial_x,
+        args.socket_rot_initial_y,
+        args.socket_rot_initial_z,
+    )
     socket_rot_noise = None
     if min(args.socket_rot_noise_x, args.socket_rot_noise_y, args.socket_rot_noise_z) >= 0.0:
         socket_rot_noise = (
@@ -331,6 +347,8 @@ def main() -> None:
         max_episode_length=mel,
         virtual_screen_capture=bool(args.virtual_display),
         force_render=False,
+        socket_pos_initial=socket_pos_initial,
+        socket_rot_initial=socket_rot_initial,
         socket_pos_noise=socket_pos_noise,
         socket_rot_noise=socket_rot_noise,
         extra_overrides=extra,
