@@ -429,6 +429,10 @@ class Workspace:
             f"{self.replay.num_success} successes, "
             f"{self.replay.num_episode} total episodes added."
         )
+        # Warm-up may leave partial in-flight episodes in the vector trackers.
+        # Training starts from a fresh env reset, so drop those partials before
+        # calling replay.new_episodes() again.
+        self.replay.reset_current_episodes()
 
     # ──────────────────────────────────────────────────────────────────────
     # Evaluation
@@ -563,6 +567,7 @@ class Workspace:
 
         # ── initial env reset ──────────────────────────────────────────────
         obs = self.train_env.reset()
+        self.replay.reset_current_episodes()
         self.replay.new_episodes(obs)
 
         stopwatch = common_utils.Stopwatch()
@@ -616,6 +621,7 @@ class Workspace:
                 # After eval the env state is undefined; reset all envs and
                 # re-synchronise the replay episode trackers before resuming.
                 obs = self.train_env.reset()
+                self.replay.reset_current_episodes()
                 self.replay.new_episodes(obs)
 
         # Final evaluation

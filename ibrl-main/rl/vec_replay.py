@@ -168,6 +168,21 @@ class VecReplayBuffer:
             self.episodes[i].push_obs(env_obs)
             self._initialized[i] = True
 
+    def reset_current_episodes(self) -> None:
+        """Drop any in-flight episode trackers and mark all env slots uninitialized.
+
+        This is used when the simulator is force-reset outside the normal
+        episode termination flow (for example, after warm-up or evaluation).
+        In that case the partial trajectories should not be continued, and
+        calling ``new_episodes()`` on already-initialized ``rela.Episode``
+        objects would trip an internal assertion.
+        """
+        self.episodes = [
+            rela.Episode(self.nstep, self.max_episode_length, self.gamma)
+            for _ in range(self.num_envs)
+        ]
+        self._initialized = [False] * self.num_envs
+
     def _start_single_episode(self, env_id: int, obs: Dict[str, torch.Tensor]) -> None:
         """Initialise the episode tracker for one env with a pre-sliced obs."""
         cpu_obs = {k: v.cpu() for k, v in obs.items()}
