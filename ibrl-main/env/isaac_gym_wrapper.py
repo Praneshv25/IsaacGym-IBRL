@@ -85,6 +85,8 @@ def make_tacsl_bulb_task(
     headless: bool,
     seed: int,
     active_camera_names: Optional[List[str]] = None,
+    socket_pos_noise: Optional[Tuple[float, float, float]] = None,
+    socket_rot_noise: Optional[Tuple[float, float, float]] = None,
     extra_overrides: Optional[List[str]] = None,
     max_episode_length: Optional[int] = None,
     virtual_screen_capture: bool = False,
@@ -157,6 +159,12 @@ def make_tacsl_bulb_task(
 
     if max_episode_length is not None:
         base_overrides.append(f"task.rl.max_episode_length={int(max_episode_length)}")
+    if socket_pos_noise is not None:
+        x, y, z = socket_pos_noise
+        base_overrides.append(f"task.randomize.socket_pos_xyz_noise=[{x},{y},{z}]")
+    if socket_rot_noise is not None:
+        rx, ry, rz = socket_rot_noise
+        base_overrides.append(f"task.randomize.socket_rot_noise=[{rx},{ry},{rz}]")
 
     if extra_overrides:
         base_overrides = base_overrides + extra_overrides
@@ -257,6 +265,8 @@ class IsaacGymBulbEnv:
         rl_camera: str = "",
         isaac_camera: str = "wrist_2",
         image_hw: Tuple[int, int] = (256, 256),
+        socket_pos_noise: Optional[Tuple[float, float, float]] = None,
+        socket_rot_noise: Optional[Tuple[float, float, float]] = None,
         extra_overrides: Optional[List[str]] = None,
         max_episode_length: Optional[int] = None,
         virtual_screen_capture: bool = False,
@@ -293,6 +303,8 @@ class IsaacGymBulbEnv:
             headless=headless,
             seed=seed,
             active_camera_names=[self.isaac_camera] if self.rl_camera else None,
+            socket_pos_noise=socket_pos_noise,
+            socket_rot_noise=socket_rot_noise,
             extra_overrides=env_overrides,
             max_episode_length=max_episode_length,
             virtual_screen_capture=virtual_screen_capture,

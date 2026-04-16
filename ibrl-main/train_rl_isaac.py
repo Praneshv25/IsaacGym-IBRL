@@ -86,6 +86,12 @@ class MainConfig(common_utils.RunConfig):
     isaac_camera: str = "wrist_2"
     image_height: int = 256
     image_width: int = 256
+    socket_pos_noise_x: float = -1.0
+    socket_pos_noise_y: float = -1.0
+    socket_pos_noise_z: float = -1.0
+    socket_rot_noise_x: float = -1.0
+    socket_rot_noise_y: float = -1.0
+    socket_rot_noise_z: float = -1.0
 
     # ── RL agent ─────────────────────────────────────────────────────────────
     q_agent: QAgentConfig = field(default_factory=lambda: QAgentConfig())
@@ -320,6 +326,20 @@ class Workspace:
     def _setup_env(self) -> None:
         cfg = self.cfg
         print(common_utils.wrap_ruler("building IsaacGymBulbEnv"))
+        socket_pos_noise = None
+        if min(cfg.socket_pos_noise_x, cfg.socket_pos_noise_y, cfg.socket_pos_noise_z) >= 0.0:
+            socket_pos_noise = (
+                cfg.socket_pos_noise_x,
+                cfg.socket_pos_noise_y,
+                cfg.socket_pos_noise_z,
+            )
+        socket_rot_noise = None
+        if min(cfg.socket_rot_noise_x, cfg.socket_rot_noise_y, cfg.socket_rot_noise_z) >= 0.0:
+            socket_rot_noise = (
+                cfg.socket_rot_noise_x,
+                cfg.socket_rot_noise_y,
+                cfg.socket_rot_noise_z,
+            )
         self.train_env = IsaacGymBulbEnv(
             isaacgym_envs_path=cfg.isaacgym_envs_path,
             num_envs=cfg.num_envs,
@@ -332,6 +352,8 @@ class Workspace:
             rl_camera=cfg.rl_camera if not cfg.use_state else "",
             isaac_camera=cfg.isaac_camera,
             image_hw=(cfg.image_height, cfg.image_width),
+            socket_pos_noise=socket_pos_noise,
+            socket_rot_noise=socket_rot_noise,
         )
         print(self.train_env)
         print(f"  observation_shape : {self.train_env.observation_shape}")
@@ -683,6 +705,20 @@ def load_model(weight_file: str, device: str):
         rl_camera=cfg.rl_camera if not cfg.use_state else "",
         isaac_camera=cfg.isaac_camera,
         image_hw=(cfg.image_height, cfg.image_width),
+        socket_pos_noise=(
+            cfg.socket_pos_noise_x,
+            cfg.socket_pos_noise_y,
+            cfg.socket_pos_noise_z,
+        )
+        if min(cfg.socket_pos_noise_x, cfg.socket_pos_noise_y, cfg.socket_pos_noise_z) >= 0.0
+        else None,
+        socket_rot_noise=(
+            cfg.socket_rot_noise_x,
+            cfg.socket_rot_noise_y,
+            cfg.socket_rot_noise_z,
+        )
+        if min(cfg.socket_rot_noise_x, cfg.socket_rot_noise_y, cfg.socket_rot_noise_z) >= 0.0
+        else None,
     )
 
     return agent, cfg, env_params
