@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Dict, List, Optional
 from dataclasses import dataclass, field
 import copy
 from contextlib import contextmanager
@@ -106,7 +106,7 @@ class QAgent(nn.Module):
         # data augmentation
         self.aug = common_utils.RandomShiftsAug(pad=4)
 
-        self.bc_policies: list[nn.Module] = []
+        self.bc_policies: List[nn.Module] = []
         # to log rl vs bc during evaluation
         self.stats: Optional[common_utils.MultiCounter] = None
 
@@ -155,7 +155,7 @@ class QAgent(nn.Module):
         self.cfg.act_method = original_method
         return
 
-    def _encode(self, obs: dict[str, torch.Tensor], augment: bool) -> torch.Tensor:
+    def _encode(self, obs: Dict[str, torch.Tensor], augment: bool) -> torch.Tensor:
         """This function encodes the observation into feature tensor."""
         data = obs[self.rl_camera].float()
         if augment:
@@ -177,7 +177,7 @@ class QAgent(nn.Module):
         return should_unsqueeze
 
     def act(
-        self, obs: dict[str, torch.Tensor], *, eval_mode=False, stddev=0.0, cpu=True
+        self, obs: Dict[str, torch.Tensor], *, eval_mode=False, stddev=0.0, cpu=True
     ) -> torch.Tensor:
         """This function takes tensor and returns actions in tensor"""
         assert not self.training
@@ -227,7 +227,7 @@ class QAgent(nn.Module):
     def _act_default(
         self,
         *,
-        obs: dict[str, torch.Tensor],
+        obs: Dict[str, torch.Tensor],
         eval_mode: bool,
         stddev: float,
         clip: Optional[float],
@@ -249,7 +249,7 @@ class QAgent(nn.Module):
     def _act_ibrl(
         self,
         *,
-        obs: dict[str, torch.Tensor],
+        obs: Dict[str, torch.Tensor],
         eval_mode: bool,
         stddev: float,
         clip: Optional[float],
@@ -329,7 +329,7 @@ class QAgent(nn.Module):
     def _act_ibrl_soft(
         self,
         *,
-        obs: dict[str, torch.Tensor],
+        obs: Dict[str, torch.Tensor],
         eval_mode: bool,
         stddev: float,
         clip: Optional[float],
@@ -394,11 +394,11 @@ class QAgent(nn.Module):
 
     def update_critic(
         self,
-        obs: dict[str, torch.Tensor],
-        reply: dict[str, torch.Tensor],
+        obs: Dict[str, torch.Tensor],
+        reply: Dict[str, torch.Tensor],
         reward: torch.Tensor,
         discount: torch.Tensor,
-        next_obs: dict[str, torch.Tensor],
+        next_obs: Dict[str, torch.Tensor],
         stddev: float,
     ):
         with torch.no_grad():
@@ -470,7 +470,7 @@ class QAgent(nn.Module):
         self.critic_opt.step()
         return metrics
 
-    def _compute_actor_loss(self, obs: dict[str, torch.Tensor], stddev: float):
+    def _compute_actor_loss(self, obs: Dict[str, torch.Tensor], stddev: float):
         if not self.use_state:
             assert "feat" in obs, "safety check"
 
@@ -490,7 +490,7 @@ class QAgent(nn.Module):
         return actor_loss
 
     def _compute_actor_bc_loss(self, batch, *, backprop_encoder):
-        obs: dict[str, torch.Tensor] = batch.obs
+        obs: Dict[str, torch.Tensor] = batch.obs
 
         if not self.use_state:
             assert "feat" not in obs, "safety check"
@@ -511,7 +511,7 @@ class QAgent(nn.Module):
         loss = loss.sum(1).mean(0)
         return loss
 
-    def update_actor(self, obs: dict[str, torch.Tensor], stddev: float):
+    def update_actor(self, obs: Dict[str, torch.Tensor], stddev: float):
         metrics = {}
         actor_loss = self._compute_actor_loss(obs, stddev)
         metrics["train/actor_loss"] = actor_loss.item()
@@ -524,7 +524,7 @@ class QAgent(nn.Module):
 
     def update_actor_rft(
         self,
-        obs: dict[str, torch.Tensor],
+        obs: Dict[str, torch.Tensor],
         stddev: float,
         bc_batch,
         ref_agent: "QAgent",
@@ -582,10 +582,10 @@ class QAgent(nn.Module):
         bc_batch=None,
         ref_agent: Optional["QAgent"] = None,
     ):
-        obs: dict[str, torch.Tensor] = batch.obs
+        obs: Dict[str, torch.Tensor] = batch.obs
         reward: torch.Tensor = batch.reward
         discount: torch.Tensor = batch.bootstrap
-        next_obs: dict[str, torch.Tensor] = batch.next_obs
+        next_obs: Dict[str, torch.Tensor] = batch.next_obs
 
         if not self.use_state:
             obs["feat"] = self._encode(obs, augment=True)

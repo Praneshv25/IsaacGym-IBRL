@@ -41,6 +41,7 @@ OBS_KEYS: List[str] = ["ee_pos", "ee_quat", "socket_pos", "socket_quat"]
 
 STATE_DIM: int = 3 + 4 + 3 + 4  # = 14
 ACTION_DIM: int = 7  # 6-DoF delta + gripper
+EE_STATE_DIM: int = 7
 
 
 # ---------------------------------------------------------------------------
@@ -241,6 +242,9 @@ class IsaacGymBulbEnv:
         headless: bool = True,
         seed: int = 0,
         env_reward_scale: float = 1.0,
+        rl_camera: str = "",
+        isaac_camera: str = "wrist_2",
+        image_hw: Tuple[int, int] = (256, 256),
         extra_overrides: Optional[List[str]] = None,
         max_episode_length: Optional[int] = None,
         virtual_screen_capture: bool = False,
@@ -249,6 +253,24 @@ class IsaacGymBulbEnv:
         self.num_envs = num_envs
         self.device = rl_device
         self.env_reward_scale = env_reward_scale
+        self.rl_camera = str(rl_camera).strip()
+        self.isaac_camera = str(isaac_camera).strip() if self.rl_camera else ""
+        self.image_hw = (int(image_hw[0]), int(image_hw[1]))
+
+        env_overrides = list(extra_overrides or [])
+        if self.rl_camera:
+            h, w = self.image_hw
+            env_overrides.extend(
+                [
+                    "task.env.use_camera_obs=true",
+                    "task.env.use_camera=true",
+                    "task.env.enableCameraSensors=true",
+                    "task.env.use_isaac_gym_tactile=false",
+                    "task.env.use_shear_force=false",
+                    "task.env.use_tactile_field_obs=false",
+                    f"+task.env.obsDims.{self.isaac_camera}=[{h},{w},3]",
+                ]
+            )
 
         self.ig_env = make_tacsl_bulb_task(
             isaacgym_envs_path=isaacgym_envs_path,
@@ -258,7 +280,7 @@ class IsaacGymBulbEnv:
             graphics_device_id=graphics_device_id,
             headless=headless,
             seed=seed,
-            extra_overrides=extra_overrides,
+            extra_overrides=env_overrides,
             max_episode_length=max_episode_length,
             virtual_screen_capture=virtual_screen_capture,
             force_render=force_render,
@@ -266,8 +288,11 @@ class IsaacGymBulbEnv:
 
         # ── IBRL / QAgent compatibility ────────────────────────────────────
         self.action_dim = ACTION_DIM
-        self.observation_shape = (STATE_DIM,)
-        self.prop_shape = (STATE_DIM,)  # prop == state when use_state=True
+        if self.rl_camera:
+            self.observation_shape = (3, self.image_hw[0], self.image_hw[1])
+        else:
+            self.observation_shape = (STATE_DIM,)
+        self.prop_shape = (EE_STATE_DIM,) if self.rl_camera else (STATE_DIM,)
 
         # ── per-env episode bookkeeping ────────────────────────────────────
         self._episode_reward = torch.zeros(num_envs, device=rl_device)
@@ -289,7 +314,25 @@ class IsaacGymBulbEnv:
         """
         parts = [self.ig_env.obs_dict[k] for k in OBS_KEYS]
         state = torch.cat(parts, dim=-1).float()  # (N, 14)
-        return {"state": state, "prop": state}
+        prop = state[..., :EE_STATE_DIM] if self.rl_camera else state
+        obs = {"state": state, "prop": prop}
+        if self.rl_camera:
+            if self.isaac_camera not in self.ig_env.obs_dict:
+                raise KeyError(
+                    f"Isaac obs_dict has no key {self.isaac_camera!r}; "
+                    f"available keys: {sorted(self.ig_env.obs_dict.keys())}"
+                )
+            raw = self.ig_env.obs_dict[self.isaac_camera]
+            if raw.dim() != 4:
+                raise ValueError(
+                    f"Expected camera {self.isaac_camera!r} to be (N,H,W,C), "
+                    f"got {tuple(raw.shape)}"
+                )
+            image = raw.permute(0, 3, 1, 2).contiguous().float()
+            if float(image.max()) <= 1.01:
+                image = image * 255.0
+            obs[self.rl_camera] = image
+        return obs
 
     def _apply_reset_for_done_envs(self, done_ids: torch.Tensor) -> None:
         """Call ``reset_idx`` on the done environments and refresh ``obs_dict``.
@@ -445,7 +488,7 @@ class IsaacGymBulbEnv:
         return (
             f"IsaacGymBulbEnv("
             f"num_envs={self.num_envs}, "
-            f"obs_dim={STATE_DIM}, "
+            f"obs_dim={self.observation_shape}, "
             f"action_dim={ACTION_DIM}, "
             f"device={self.device})"
         )

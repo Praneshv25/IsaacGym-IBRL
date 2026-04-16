@@ -1,6 +1,7 @@
 import os
 from collections import defaultdict
 import json
+from typing import Dict, List
 import torch
 import h5py
 import numpy as np
@@ -74,15 +75,15 @@ class ReplayBuffer:
         self.num_success = 0
         self.num_episode = 0
 
-    def new_episode(self, obs: dict[str, torch.Tensor]):
+    def new_episode(self, obs: Dict[str, torch.Tensor]):
         self.episode_image_obs = defaultdict(list)
         self.episode.init({})
         self.episode.push_obs(obs)
 
-    def append_obs(self, obs: dict[str, torch.Tensor]):
+    def append_obs(self, obs: Dict[str, torch.Tensor]):
         self.episode.push_obs(obs)
 
-    def append_reply(self, reply: dict[str, torch.Tensor]):
+    def append_reply(self, reply: Dict[str, torch.Tensor]):
         self.episode.push_action(reply)
 
     def append_reward_terminal(self, reward: float, terminal: bool, success: bool):
@@ -94,12 +95,12 @@ class ReplayBuffer:
 
     def add(
         self,
-        obs: dict[str, torch.Tensor],
-        reply: dict[str, torch.Tensor],
+        obs: Dict[str, torch.Tensor],
+        reply: Dict[str, torch.Tensor],
         reward: float,
         terminal: bool,
         success: bool,
-        image_obs: dict[str, torch.Tensor],
+        image_obs: Dict[str, torch.Tensor],
     ):
         self.episode.push_action(reply)
         self.episode.push_reward(reward)
@@ -192,7 +193,7 @@ def add_demos_to_replay(
     replay: ReplayBuffer,
     data_path: str,
     num_data: int,
-    rl_cameras: list[str],
+    rl_cameras: List[str],
     use_state: int,
     obs_stack: int,
     state_stack: int,

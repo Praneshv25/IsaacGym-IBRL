@@ -36,7 +36,7 @@ import copy
 import os
 import sys
 from dataclasses import dataclass, field
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple
 
 try:
     import isaacgym  # noqa: F401 — before torch when IsaacGym is installed
@@ -81,6 +81,11 @@ class MainConfig(common_utils.RunConfig):
     # ── observations / actions ───────────────────────────────────────────────
     obs_dim: int = STATE_DIM  # 14  (fixed – matches IsaacGymBulbEnv)
     action_dim: int = ACTION_DIM  # 7  (fixed)
+    use_state: int = 1
+    rl_camera: str = "wrist"
+    isaac_camera: str = "wrist_2"
+    image_height: int = 256
+    image_width: int = 256
 
     # ── RL agent ─────────────────────────────────────────────────────────────
     q_agent: QAgentConfig = field(default_factory=lambda: QAgentConfig())
@@ -153,7 +158,7 @@ class MainConfig(common_utils.RunConfig):
 
 def _load_bc_policy(
     weight_file: str, device: str
-) -> Tuple[StateBcPolicy, Optional[torch.Tensor]]:
+) -> Tuple[torch.nn.Module, Optional[torch.Tensor]]:
     """Load a ``StateBcPolicy`` checkpoint saved by ``train_bc_isaac.py``.
 
     Reads the ``cfg.yaml`` next to the checkpoint to reconstruct the
@@ -175,10 +180,57 @@ def _load_bc_policy(
         Per-dim normalisation scale, or ``None`` when the companion file
         is absent (legacy checkpoints without normalisation).
     """
-    # Import here to avoid circular imports at module load time
+    cfg_path = os.path.join(os.path.dirname(weight_file), "cfg.yaml")
+    with open(cfg_path, "r") as f:
+        cfg_y = yaml.safe_load(f) or {}
+
+    ds = cfg_y.get("dataset") or {}
+    image_keys = ds.get("image_keys") or []
+    if isinstance(image_keys, str):
+        image_keys = [image_keys] if image_keys.strip() else []
+    image_keys_csv = str(ds.get("image_keys_csv") or "").strip()
+    if image_keys_csv:
+        image_keys = [k.strip() for k in image_keys_csv.split(",") if k.strip()]
+
+    if len(image_keys) > 0:
+        from train_bc_isaac_vis import load_bc_policy_vis
+
+        return load_bc_policy_vis(weight_file, device)
+
     from train_bc_isaac import load_bc_policy as _load
 
     return _load(weight_file, device)
+
+
+class VisionBcPolicyAdapter(torch.nn.Module):
+    """Adapts RL obs dicts to the input schema expected by vision BC checkpoints."""
+
+    def __init__(self, bc_policy: torch.nn.Module, rl_camera: str):
+        super().__init__()
+        self.bc_policy = bc_policy
+        self.rl_camera = rl_camera
+        prop_shape = getattr(bc_policy, "prop_shape", None)
+        self._prop_dim = int(prop_shape[0]) if prop_shape is not None else 14
+
+    def train(self, mode: bool = True):
+        self.bc_policy.train(mode)
+        return super().train(mode)
+
+    def act(self, obs, *, eval_mode=True, cpu=True, **kwargs):
+        bc_obs = {}
+        if hasattr(self.bc_policy, "rl_cameras"):
+            for cam in self.bc_policy.rl_cameras:
+                bc_obs[cam] = obs[self.rl_camera]
+        if getattr(self.bc_policy.cfg, "use_prop", 0):
+            prop = obs["prop"]
+            if self._prop_dim == 7:
+                prop = prop[..., :7]
+            elif self._prop_dim != prop.shape[-1]:
+                raise ValueError(
+                    f"Vision BC expects prop dim {self._prop_dim}, got {prop.shape[-1]}"
+                )
+            bc_obs["prop"] = prop
+        return self.bc_policy.act(bc_obs, eval_mode=eval_mode, cpu=cpu)
 
 
 # ---------------------------------------------------------------------------
@@ -216,13 +268,17 @@ class Workspace:
 
         # ── BC policy (optional) ──────────────────────────────────────────
         # Loaded before the QAgent so we can pass it in immediately.
-        self.bc_policy: Optional[StateBcPolicy] = None
+        self.bc_policy: Optional[torch.nn.Module] = None
         self._bc_action_scale: Optional[torch.Tensor] = None
         if cfg.bc_policy:
             print(common_utils.wrap_ruler("loading BC policy"))
-            self.bc_policy, self._bc_action_scale = _load_bc_policy(
+            loaded_bc_policy, self._bc_action_scale = _load_bc_policy(
                 cfg.bc_policy, cfg.rl_device
             )
+            if hasattr(loaded_bc_policy, "rl_cameras"):
+                self.bc_policy = VisionBcPolicyAdapter(loaded_bc_policy, cfg.rl_camera)
+            else:
+                self.bc_policy = loaded_bc_policy
             print(f"  BC policy loaded from: {cfg.bc_policy}")
             if self._bc_action_scale is not None:
                 print(
@@ -231,14 +287,13 @@ class Workspace:
                 )
 
         # ── agent ─────────────────────────────────────────────────────────
-        # Force state-based mode: FcActor + MultiFcQ, no image encoder.
-        print(common_utils.wrap_ruler("building QAgent (use_state=True)"))
+        print(common_utils.wrap_ruler(f"building QAgent (use_state={cfg.use_state})"))
         self.agent = QAgent(
-            use_state=1,
-            obs_shape=(cfg.obs_dim,),
-            prop_shape=(cfg.obs_dim,),
+            use_state=cfg.use_state,
+            obs_shape=self.train_env.observation_shape,
+            prop_shape=self.train_env.prop_shape,
             action_dim=cfg.action_dim,
-            rl_camera="",  # unused when use_state=True
+            rl_camera=cfg.rl_camera if not cfg.use_state else "",
             cfg=cfg.q_agent,
         )
 
@@ -274,6 +329,9 @@ class Workspace:
             headless=cfg.headless,
             seed=cfg.seed,
             env_reward_scale=cfg.env_reward_scale,
+            rl_camera=cfg.rl_camera if not cfg.use_state else "",
+            isaac_camera=cfg.isaac_camera,
+            image_hw=(cfg.image_height, cfg.image_width),
         )
         print(self.train_env)
         print(f"  observation_shape : {self.train_env.observation_shape}")
@@ -299,11 +357,15 @@ class Workspace:
             # Build the BC dataset first so we can share its action_scale
             # with add_demos_from_pkl (consistent normalisation).
             print(common_utils.wrap_ruler("building BC dataset from preload_pkl"))
+            ds_cfg = IsaacDatasetConfig(
+                path=cfg.preload_pkl,
+                normalize_actions=True,
+            )
+            if not cfg.use_state:
+                ds_cfg.image_keys = [cfg.rl_camera]
+                ds_cfg.image_prop_mode = "ee7"
             _bc_ds = IsaacPklDataset(
-                IsaacDatasetConfig(
-                    path=cfg.preload_pkl,
-                    normalize_actions=True,
-                )
+                ds_cfg
             )
             self.bc_dataset = _bc_ds
             # Propagate shared scale to the replay loader so demo actions
@@ -593,11 +655,11 @@ def load_model(weight_file: str, device: str):
     cfg: MainConfig = pyrallis.load(MainConfig, open(cfg_path))  # type: ignore
 
     agent = QAgent(
-        use_state=1,
-        obs_shape=(cfg.obs_dim,),
-        prop_shape=(cfg.obs_dim,),
+        use_state=cfg.use_state,
+        obs_shape=(cfg.obs_dim,) if cfg.use_state else (3, cfg.image_height, cfg.image_width),
+        prop_shape=(cfg.obs_dim,) if cfg.use_state else (7,),
         action_dim=cfg.action_dim,
-        rl_camera="",
+        rl_camera=cfg.rl_camera if not cfg.use_state else "",
         cfg=cfg.q_agent,
     )
     agent.load_state_dict(torch.load(weight_file, map_location=device))
@@ -612,6 +674,9 @@ def load_model(weight_file: str, device: str):
         headless=cfg.headless,
         seed=cfg.seed,
         env_reward_scale=cfg.env_reward_scale,
+        rl_camera=cfg.rl_camera if not cfg.use_state else "",
+        isaac_camera=cfg.isaac_camera,
+        image_hw=(cfg.image_height, cfg.image_width),
     )
 
     return agent, cfg, env_params

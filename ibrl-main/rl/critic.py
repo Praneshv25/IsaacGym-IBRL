@@ -87,7 +87,7 @@ class Critic(nn.Module):
         self.q1 = q_cons()
         self.q2 = q_cons()
 
-    def forward(self, feat, prop, action) -> tuple[torch.Tensor, torch.Tensor]:
+    def forward(self, feat, prop, action):
         # assert self.training
         q1 = self.q1(feat, prop, action)
         q2 = self.q2(feat, prop, action)
