@@ -144,6 +144,7 @@ class MainConfig(common_utils.RunConfig):
     # ── logging ──────────────────────────────────────────────────────────────
     save_dir: str = "exps/rl_isaac/run1"
     use_wb: int = 0
+    debug_every_step: int = 0
 
     def __post_init__(self) -> None:
         # Clamp stddev so min ≤ max
@@ -598,6 +599,17 @@ class Workspace:
 
         print(common_utils.wrap_ruler("training"))
         while self.global_step < cfg.num_train_step:
+            env_step_idx = self.global_step // max(cfg.num_envs, 1)
+            should_debug = (
+                cfg.debug_every_step > 0 and env_step_idx % cfg.debug_every_step == 0
+            )
+            if should_debug:
+                print(
+                    f"[train_rl_isaac] loop start | env_step={env_step_idx} | "
+                    f"global_step={self.global_step} | replay={self.replay.size()} | "
+                    f"episodes={self.global_episode}",
+                    flush=True,
+                )
             # ── 1. act ────────────────────────────────────────────────────
             with stopwatch.time("act"), torch.no_grad(), utils.eval_mode(self.agent):
                 stddev = utils.schedule(cfg.stddev_schedule, self.global_step)
@@ -605,16 +617,40 @@ class Workspace:
                 # Returns (N, 7) actions on rl_device
                 actions = self.agent.act(obs, eval_mode=False, stddev=stddev, cpu=False)
                 stat["data/stddev"].append(stddev)
+            if should_debug:
+                a0 = actions[0].detach().float().cpu().numpy()
+                print(
+                    f"[train_rl_isaac] after act | stddev={stddev:.4f} | "
+                    f"a0={np.array2string(a0, precision=4, suppress_small=True)}",
+                    flush=True,
+                )
 
             # ── 2. env step ───────────────────────────────────────────────
             with stopwatch.time("env_step"):
                 obs, rewards, dones, successes = self.train_env.step(actions)
+            if should_debug:
+                r0 = float(rewards[0].item())
+                d0 = bool(dones[0].item())
+                s0 = bool(successes[0].item())
+                socket0 = obs["state"][0, 7:10].detach().float().cpu().numpy()
+                print(
+                    f"[train_rl_isaac] after env_step | r0={r0:.4f} | done0={d0} | "
+                    f"success0={s0} | socket0="
+                    f"{np.array2string(socket0, precision=4, suppress_small=True)}",
+                    flush=True,
+                )
 
             # ── 3. add to replay ──────────────────────────────────────────
             with stopwatch.time("replay_add"):
                 self.replay.add_step(obs, actions, rewards, dones, successes)
                 # Each env step produces num_envs transitions
                 self.global_step += cfg.num_envs
+            if should_debug:
+                print(
+                    f"[train_rl_isaac] after replay_add | global_step={self.global_step} | "
+                    f"replay={self.replay.size()}",
+                    flush=True,
+                )
 
             # ── episode stats ─────────────────────────────────────────────
             n_done = int(dones.sum().item())
@@ -632,9 +668,16 @@ class Workspace:
                 and self.replay.ready(min_episodes=max(1, cfg.batch_size // 10))
             ):
                 last_update_step = self.global_step
+                if should_debug:
+                    print("[train_rl_isaac] starting update", flush=True)
                 with stopwatch.time("train"):
                     self._rl_train(stat)
                     self.train_step += 1
+                if should_debug:
+                    print(
+                        f"[train_rl_isaac] finished update | train_step={self.train_step}",
+                        flush=True,
+                    )
 
             # ── 5. log & eval ─────────────────────────────────────────────
             if self.global_step - last_log_step >= cfg.log_per_step:
