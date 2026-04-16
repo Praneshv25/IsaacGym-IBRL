@@ -84,6 +84,7 @@ def make_tacsl_bulb_task(
     graphics_device_id: int,
     headless: bool,
     seed: int,
+    active_camera_names: Optional[List[str]] = None,
     extra_overrides: Optional[List[str]] = None,
     max_episode_length: Optional[int] = None,
     virtual_screen_capture: bool = False,
@@ -167,6 +168,17 @@ def make_tacsl_bulb_task(
         cfg = compose(config_name="config", overrides=base_overrides)
         task_config: dict = omegaconf_to_dict(cfg.task)
         task_config["env"]["numEnvs"] = num_envs
+        if active_camera_names:
+            active = set(active_camera_names)
+            camera_cfgs = task_config["env"].get("camera_configs", [])
+            task_config["env"]["camera_configs"] = [
+                c for c in camera_cfgs if c.get("name") in active
+            ]
+            obs_dims = task_config["env"].get("obsDims", {})
+            keep_obs = set(OBS_KEYS) | active
+            task_config["env"]["obsDims"] = {
+                k: v for k, v in obs_dims.items() if k in keep_obs
+            }
         env = TacSLTaskBulb(
             cfg=task_config,
             rl_device=rl_device,
@@ -280,6 +292,7 @@ class IsaacGymBulbEnv:
             graphics_device_id=graphics_device_id,
             headless=headless,
             seed=seed,
+            active_camera_names=[self.isaac_camera] if self.rl_camera else None,
             extra_overrides=env_overrides,
             max_episode_length=max_episode_length,
             virtual_screen_capture=virtual_screen_capture,
