@@ -5,12 +5,17 @@ from torch.nn.init import trunc_normal_
 
 
 class PatchEmbed1(nn.Module):
-    def __init__(self, embed_dim):
+    def __init__(self, embed_dim, image_hw):
         super().__init__()
         self.conv = nn.Conv2d(3, embed_dim, kernel_size=8, stride=8)
-
-        self.num_patch = 144
+        self.num_patch = self._infer_num_patch(image_hw)
         self.patch_dim = embed_dim
+
+    def _infer_num_patch(self, image_hw):
+        h, w = int(image_hw[0]), int(image_hw[1])
+        with torch.no_grad():
+            y = self.conv(torch.zeros(1, 3, h, w))
+        return int(y.shape[2] * y.shape[3])
 
     def forward(self, x: torch.Tensor):
         y = self.conv(x)
@@ -19,7 +24,7 @@ class PatchEmbed1(nn.Module):
 
 
 class PatchEmbed2(nn.Module):
-    def __init__(self, embed_dim, use_norm):
+    def __init__(self, embed_dim, use_norm, image_hw):
         super().__init__()
         layers = [
             nn.Conv2d(3, embed_dim, kernel_size=8, stride=4),
@@ -29,8 +34,14 @@ class PatchEmbed2(nn.Module):
         ]
         self.embed = nn.Sequential(*layers)
 
-        self.num_patch = 121
+        self.num_patch = self._infer_num_patch(image_hw)
         self.patch_dim = embed_dim
+
+    def _infer_num_patch(self, image_hw):
+        h, w = int(image_hw[0]), int(image_hw[1])
+        with torch.no_grad():
+            y = self.embed(torch.zeros(1, 3, h, w))
+        return int(y.shape[2] * y.shape[3])
 
     def forward(self, x: torch.Tensor):
         y = self.embed(x)
@@ -85,13 +96,13 @@ class TransformerLayer(nn.Module):
 
 
 class MinVit(nn.Module):
-    def __init__(self, embed_style, embed_dim, embed_norm, num_head, depth):
+    def __init__(self, embed_style, embed_dim, embed_norm, num_head, depth, image_hw):
         super().__init__()
 
         if embed_style == "embed1":
-            self.patch_embed = PatchEmbed1(embed_dim)
+            self.patch_embed = PatchEmbed1(embed_dim, image_hw)
         elif embed_style == "embed2":
-            self.patch_embed = PatchEmbed2(embed_dim, use_norm=embed_norm)
+            self.patch_embed = PatchEmbed2(embed_dim, use_norm=embed_norm, image_hw=image_hw)
         else:
             assert False
 
