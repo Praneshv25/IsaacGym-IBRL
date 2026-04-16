@@ -108,6 +108,7 @@ class SpatialEmbQNet(nn.Module):
             num_proj = num_patch
 
         self.fuse_patch = fuse_patch
+        self.num_patch = num_patch
         self.patch_dim = patch_dim
         self.prop_dim = prop_dim
 
@@ -136,10 +137,24 @@ class SpatialEmbQNet(nn.Module):
         return f"weight: nn.Parameter ({self.weight.size()})"
 
     def forward(self, feat: torch.Tensor, prop: torch.Tensor, action: torch.Tensor):
-        assert feat.size(-1) == self.patch_dim, "are you using CNN, need flatten&transpose"
+        if feat.dim() != 3:
+            raise ValueError(f"Expected feat to be rank-3, got {tuple(feat.shape)}")
+
+        # Accept either [B, num_patch, patch_dim] or [B, patch_dim, num_patch].
+        if feat.size(1) == self.num_patch and feat.size(2) == self.patch_dim:
+            feat_num_patch_first = feat
+        elif feat.size(1) == self.patch_dim and feat.size(2) == self.num_patch:
+            feat_num_patch_first = feat.transpose(1, 2)
+        else:
+            raise ValueError(
+                f"Unexpected feat shape {tuple(feat.shape)} for "
+                f"(num_patch={self.num_patch}, patch_dim={self.patch_dim})"
+            )
 
         if self.fuse_patch:
-            feat = feat.transpose(1, 2)
+            feat = feat_num_patch_first.transpose(1, 2)
+        else:
+            feat = feat_num_patch_first
 
         repeated_action = action.unsqueeze(1).repeat(1, feat.size(1), 1)
         all_feats = [feat, repeated_action]

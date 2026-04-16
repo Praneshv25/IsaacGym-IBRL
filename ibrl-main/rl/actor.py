@@ -33,6 +33,7 @@ class SpatialEmb(nn.Module):
         proj_in_dim = num_patch + prop_dim
         num_proj = patch_dim
 
+        self.num_patch = num_patch
         self.patch_dim = patch_dim
         self.prop_dim = prop_dim
 
@@ -49,7 +50,19 @@ class SpatialEmb(nn.Module):
         return f"weight: nn.Parameter ({self.weight.size()})"
 
     def forward(self, feat: torch.Tensor, prop: torch.Tensor):
-        feat = feat.transpose(1, 2)
+        if feat.dim() != 3:
+            raise ValueError(f"Expected feat to be rank-3, got {tuple(feat.shape)}")
+
+        # Accept either [B, num_patch, patch_dim] or [B, patch_dim, num_patch].
+        if feat.size(1) == self.num_patch and feat.size(2) == self.patch_dim:
+            feat = feat.transpose(1, 2)
+        elif feat.size(1) == self.patch_dim and feat.size(2) == self.num_patch:
+            pass
+        else:
+            raise ValueError(
+                f"Unexpected feat shape {tuple(feat.shape)} for "
+                f"(num_patch={self.num_patch}, patch_dim={self.patch_dim})"
+            )
 
         if self.prop_dim > 0:
             repeated_prop = prop.unsqueeze(1).repeat(1, feat.size(1), 1)
