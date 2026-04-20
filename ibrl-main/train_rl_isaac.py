@@ -107,7 +107,7 @@ class MainConfig(common_utils.RunConfig):
 
     # ── replay buffer ────────────────────────────────────────────────────────
     # replay_buffer_size is in *episodes* (how rela counts capacity)
-    replay_buffer_size: int = 2_000
+    replay_buffer_size: int = 100
     batch_size: int = 256
 
     # ── training schedule ────────────────────────────────────────────────────
@@ -117,6 +117,7 @@ class MainConfig(common_utils.RunConfig):
     update_freq: int = 128
     # Total transitions to train for
     num_train_step: int = 500_000
+    max_episode_length: int = 2_000
 
     # ── warm-up ──────────────────────────────────────────────────────────────
     # Number of env steps (each = num_envs transitions) with random actions
@@ -355,6 +356,7 @@ class Workspace:
             image_hw=(cfg.image_height, cfg.image_width),
             socket_pos_noise=socket_pos_noise,
             socket_rot_noise=socket_rot_noise,
+            max_episode_length=cfg.max_episode_length,
         )
         print(self.train_env)
         print(f"  observation_shape : {self.train_env.observation_shape}")
@@ -748,6 +750,7 @@ def load_model(weight_file: str, device: str):
         rl_camera=cfg.rl_camera if not cfg.use_state else "",
         isaac_camera=cfg.isaac_camera,
         image_hw=(cfg.image_height, cfg.image_width),
+        max_episode_length=cfg.max_episode_length,
         socket_pos_noise=(
             cfg.socket_pos_noise_x,
             cfg.socket_pos_noise_y,
