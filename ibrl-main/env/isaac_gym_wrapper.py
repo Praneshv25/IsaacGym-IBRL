@@ -130,8 +130,12 @@ def make_tacsl_bulb_task(
     from hydra.core.global_hydra import GlobalHydra
     from isaacgymenvs.tasks.tacsl.tacsl_task_bulb import TacSLTaskBulb
     from isaacgymenvs.utils.reformat import omegaconf_to_dict
+    from isaacgymenvs.utils.utils import set_seed
 
     _register_omegaconf_resolvers()
+    # Mirror IsaacGymEnvs' normal entrypoint behavior so task-side torch.rand(...)
+    # reset randomization actually changes when the caller changes `seed`.
+    seed = set_seed(int(seed), torch_deterministic=False, rank=0)
 
     cfg_dir = os.path.abspath(os.path.join(isaacgym_envs_path, "isaacgymenvs", "cfg"))
 
