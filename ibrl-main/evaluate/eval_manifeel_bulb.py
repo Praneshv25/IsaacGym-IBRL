@@ -155,28 +155,26 @@ def main() -> None:
             with torch.inference_mode():
                 action_dict = policy.predict_action(obs_dict)
 
-            action_chunk = action_dict["action"]  # (B, n_action_steps, 7)
+            action_chunk = action_dict["action"]  # (B, T, 7)
             if action_chunk.dim() != 3 or action_chunk.shape[0] != 1:
                 raise ValueError(f"Expected action chunk shape (1,T,7), got {tuple(action_chunk.shape)}")
 
-            for i in range(action_chunk.shape[1]):
-                act = action_chunk[:, i, :].to(torch.device(args.rl_device)).float()
-                obs, reward, dones, successes = env.step(act)
-                wrist, state = _obs_from_env(obs)
-                image_hist.append(wrist)
-                state_hist.append(state)
+            # Keep evaluation logic as simple as possible: query policy, execute
+            # the next action only, then re-plan from the fresh observation.
+            act = action_chunk[:, 0, :].to(torch.device(args.rl_device)).float()
+            obs, reward, dones, successes = env.step(act)
+            wrist, state = _obs_from_env(obs)
+            image_hist.append(wrist)
+            state_hist.append(state)
 
-                done = bool(dones[0].item())
-                success = bool(successes[0].item())
-                step_idx += 1
-                if args.log_every > 0 and step_idx % args.log_every == 0:
-                    print(
-                        f"[eval_manifeel_bulb] step={step_idx} reward={float(reward[0].item()):.6f} "
-                        f"done={int(done)} success={int(success)}"
-                    )
-
-                if done or step_idx >= args.max_episode_length:
-                    break
+            done = bool(dones[0].item())
+            success = bool(successes[0].item())
+            step_idx += 1
+            if args.log_every > 0 and step_idx % args.log_every == 0:
+                print(
+                    f"[eval_manifeel_bulb] step={step_idx} reward={float(reward[0].item()):.6f} "
+                    f"done={int(done)} success={int(success)}"
+                )
 
         total_successes += int(success)
         if args.verbose:
