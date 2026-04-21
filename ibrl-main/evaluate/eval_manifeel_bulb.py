@@ -29,6 +29,7 @@ import dill
 import hydra
 import torch
 from omegaconf import OmegaConf
+from diffusion_policy.workspace.base_workspace import BaseWorkspace
 
 from env.isaac_gym_wrapper import IsaacGymBulbEnv
 
@@ -36,27 +37,26 @@ from env.isaac_gym_wrapper import IsaacGymBulbEnv
 OmegaConf.register_new_resolver("eval", eval, replace=True)
 
 
-def _load_policy_from_checkpoint(ckpt_path: Path, device: str):
+def _load_workspace_and_policy_from_checkpoint(ckpt_path: Path, device: str):
     payload = torch.load(ckpt_path.open("rb"), map_location="cpu", pickle_module=dill)
     cfg = payload["cfg"]
     OmegaConf.resolve(cfg)
 
-    policy = hydra.utils.instantiate(cfg.policy)
+    cls = hydra.utils.get_class(cfg._target_)
+    workspace = cls(cfg, output_dir=str(ckpt_path.parent))
+    workspace: BaseWorkspace
+    workspace.load_payload(payload, exclude_keys=None, include_keys=None)
 
-    state_dicts = payload.get("state_dicts", {})
-    if "ema_model" in state_dicts:
-        policy.load_state_dict(state_dicts["ema_model"], strict=True)
+    policy = workspace.model
+    loaded_from = "model"
+    if getattr(cfg.training, "use_ema", False) and getattr(workspace, "ema_model", None) is not None:
+        policy = workspace.ema_model
         loaded_from = "ema_model"
-    elif "model" in state_dicts:
-        policy.load_state_dict(state_dicts["model"], strict=True)
-        loaded_from = "model"
-    else:
-        raise KeyError("Checkpoint does not contain 'ema_model' or 'model' state_dict.")
 
     policy.to(torch.device(device))
     policy.eval()
     del payload
-    return cfg, policy, loaded_from
+    return cfg, workspace, policy, loaded_from
 
 
 def _obs_from_env(obs: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -105,7 +105,7 @@ def main() -> None:
     ckpt_path = Path(args.checkpoint).expanduser().resolve()
     device = torch.device(args.device)
 
-    cfg, policy, loaded_from = _load_policy_from_checkpoint(ckpt_path, args.device)
+    cfg, workspace, policy, loaded_from = _load_workspace_and_policy_from_checkpoint(ckpt_path, args.device)
     n_obs_steps = int(cfg.n_obs_steps)
     if args.num_inference_steps is not None and hasattr(policy, "num_inference_steps"):
         policy.num_inference_steps = int(args.num_inference_steps)
