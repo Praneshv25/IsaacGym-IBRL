@@ -27,6 +27,7 @@ import isaacgym  # noqa: F401
 
 import dill
 import hydra
+import numpy as np
 import torch
 from omegaconf import OmegaConf
 from diffusion_policy.workspace.base_workspace import BaseWorkspace
@@ -93,6 +94,7 @@ def main() -> None:
     parser.add_argument("--verbose", type=int, default=1)
     parser.add_argument("--num_inference_steps", type=int, default=20, help="Override diffusion denoising steps during eval")
     parser.add_argument("--log_every", type=int, default=1, help="Print step/reward every N env steps (0 disables)")
+    parser.add_argument("--dump_npz", default="", help="Optional .npz path for rollout states/actions")
     args = parser.parse_args()
 
     manifeel_root = args.manifeel_root.strip()
@@ -138,6 +140,11 @@ def main() -> None:
     for ep in range(args.num_episodes):
         obs = env.reset()
         wrist, state = _obs_from_env(obs)
+        rollout_states = [obs["state"][0].detach().cpu().numpy().astype(np.float32)]
+        rollout_actions = []
+        rollout_rewards = []
+        rollout_dones = []
+        rollout_successes = []
 
         image_hist: Deque[torch.Tensor] = deque(maxlen=n_obs_steps)
         state_hist: Deque[torch.Tensor] = deque(maxlen=n_obs_steps)
@@ -166,6 +173,11 @@ def main() -> None:
             wrist, state = _obs_from_env(obs)
             image_hist.append(wrist)
             state_hist.append(state)
+            rollout_actions.append(act[0].detach().cpu().numpy().astype(np.float32))
+            rollout_rewards.append(float(reward[0].item()))
+            rollout_dones.append(bool(dones[0].item()))
+            rollout_successes.append(bool(successes[0].item()))
+            rollout_states.append(obs["state"][0].detach().cpu().numpy().astype(np.float32))
 
             done = bool(dones[0].item())
             success = bool(successes[0].item())
@@ -179,6 +191,24 @@ def main() -> None:
         total_successes += int(success)
         if args.verbose:
             print(f"[eval_manifeel_bulb] episode={ep+1}/{args.num_episodes} success={int(success)} steps={step_idx}")
+
+        if args.dump_npz:
+            out_path = Path(args.dump_npz).expanduser().resolve()
+            if args.num_episodes > 1:
+                stem = out_path.stem
+                suffix = out_path.suffix or ".npz"
+                out_path = out_path.with_name(f"{stem}_ep{ep}{suffix}")
+            out_path.parent.mkdir(parents=True, exist_ok=True)
+            np.savez_compressed(
+                str(out_path),
+                states=np.stack(rollout_states, axis=0),
+                actions=np.stack(rollout_actions, axis=0),
+                rewards=np.asarray(rollout_rewards, dtype=np.float32),
+                dones=np.asarray(rollout_dones, dtype=np.bool_),
+                successes=np.asarray(rollout_successes, dtype=np.bool_),
+                success=np.asarray(success, dtype=np.bool_),
+            )
+            print(f"saved_rollout={out_path}")
 
     success_rate = total_successes / max(args.num_episodes, 1)
     print(f"success_rate={success_rate:.4f} ({total_successes}/{args.num_episodes})")
