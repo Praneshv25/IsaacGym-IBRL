@@ -27,7 +27,10 @@ import isaacgym  # noqa: F401
 
 import dill
 import hydra
+import imageio.v2 as imageio
+import numpy as np
 import torch
+import torch.nn.functional as F
 from omegaconf import OmegaConf
 
 from env.isaac_gym_wrapper import IsaacGymBulbEnv
@@ -66,6 +69,30 @@ def _obs_from_env(obs: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, torch.Ten
     return wrist, state
 
 
+def _u8_hwc_from_chw01(image_chw: torch.Tensor) -> np.ndarray:
+    img = image_chw[0].detach().cpu().clamp(0.0, 1.0)
+    arr = (img * 255.0).byte().permute(1, 2, 0).contiguous().numpy()
+    return arr
+
+
+def _resize_u8_hwc(img: np.ndarray, out_h: int) -> np.ndarray:
+    h, w = int(img.shape[0]), int(img.shape[1])
+    if h == out_h:
+        return img
+    out_w = max(1, int(round(w * (out_h / max(h, 1)))))
+    ten = torch.from_numpy(img).permute(2, 0, 1).unsqueeze(0).float()
+    ten = F.interpolate(ten, size=(out_h, out_w), mode="bilinear", align_corners=False)
+    out = ten.squeeze(0).permute(1, 2, 0).clamp(0, 255).byte().cpu().numpy()
+    return out
+
+
+def _composite_viewer_and_wrist(viewer_rgb: np.ndarray, wrist_rgb: np.ndarray) -> np.ndarray:
+    target_h = max(int(viewer_rgb.shape[0]), int(wrist_rgb.shape[0]))
+    viewer = _resize_u8_hwc(viewer_rgb, target_h)
+    wrist = _resize_u8_hwc(wrist_rgb, target_h)
+    return np.concatenate([viewer, wrist], axis=1)
+
+
 def _stack_history(
     image_hist: Deque[torch.Tensor],
     state_hist: Deque[torch.Tensor],
@@ -90,6 +117,8 @@ def main() -> None:
     parser.add_argument("--graphics_device_id", type=int, default=0)
     parser.add_argument("--headless", type=int, default=1)
     parser.add_argument("--verbose", type=int, default=1)
+    parser.add_argument("--out", default="", help="Optional MP4 path to save viewer+wrist rollout video")
+    parser.add_argument("--fps", type=int, default=20, help="FPS for saved MP4")
     args = parser.parse_args()
 
     manifeel_root = args.manifeel_root.strip()
@@ -126,6 +155,7 @@ def main() -> None:
         print(f"Evaluating on Isaac bulb env for {args.num_episodes} episode(s)")
 
     total_successes = 0
+    video_frames = []
 
     for ep in range(args.num_episodes):
         obs = env.reset()
@@ -136,6 +166,17 @@ def main() -> None:
         for _ in range(n_obs_steps):
             image_hist.append(wrist)
             state_hist.append(state)
+
+        if args.out:
+            viewer = env.capture_viewer_frame()
+            if viewer is None:
+                raise RuntimeError("Video recording requested but viewer capture is unavailable. Run with --headless 0.")
+            video_frames.append(
+                _composite_viewer_and_wrist(
+                    np.asarray(viewer),
+                    _u8_hwc_from_chw01(wrist),
+                )
+            )
 
         done = False
         success = False
@@ -158,6 +199,16 @@ def main() -> None:
                 image_hist.append(wrist)
                 state_hist.append(state)
 
+                if args.out:
+                    viewer = env.capture_viewer_frame()
+                    if viewer is not None:
+                        video_frames.append(
+                            _composite_viewer_and_wrist(
+                                np.asarray(viewer),
+                                _u8_hwc_from_chw01(wrist),
+                            )
+                        )
+
                 done = bool(dones[0].item())
                 success = bool(successes[0].item())
                 step_idx += 1
@@ -171,6 +222,12 @@ def main() -> None:
 
     success_rate = total_successes / max(args.num_episodes, 1)
     print(f"success_rate={success_rate:.4f} ({total_successes}/{args.num_episodes})")
+
+    if args.out and video_frames:
+        out_path = os.path.abspath(args.out)
+        os.makedirs(os.path.dirname(out_path) or ".", exist_ok=True)
+        imageio.mimsave(out_path, video_frames, fps=int(args.fps))
+        print(f"saved_video={out_path}")
 
 
 if __name__ == "__main__":
