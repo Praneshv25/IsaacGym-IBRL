@@ -40,7 +40,7 @@ OmegaConf.register_new_resolver("eval", eval, replace=True)
 
 
 def _load_policy_from_checkpoint(ckpt_path: Path, device: str):
-    payload = torch.load(ckpt_path.open("rb"), map_location=device, pickle_module=dill)
+    payload = torch.load(ckpt_path.open("rb"), map_location="cpu", pickle_module=dill)
     cfg = payload["cfg"]
     OmegaConf.resolve(cfg)
 
@@ -58,6 +58,7 @@ def _load_policy_from_checkpoint(ckpt_path: Path, device: str):
 
     policy.to(torch.device(device))
     policy.eval()
+    del payload
     return cfg, policy, loaded_from
 
 
@@ -119,6 +120,7 @@ def main() -> None:
     parser.add_argument("--verbose", type=int, default=1)
     parser.add_argument("--out", default="", help="Optional MP4 path to save viewer+wrist rollout video")
     parser.add_argument("--fps", type=int, default=20, help="FPS for saved MP4")
+    parser.add_argument("--num_inference_steps", type=int, default=20, help="Override diffusion denoising steps during eval")
     args = parser.parse_args()
 
     manifeel_root = args.manifeel_root.strip()
@@ -133,6 +135,8 @@ def main() -> None:
 
     cfg, policy, loaded_from = _load_policy_from_checkpoint(ckpt_path, args.device)
     n_obs_steps = int(cfg.n_obs_steps)
+    if args.num_inference_steps is not None and hasattr(policy, "num_inference_steps"):
+        policy.num_inference_steps = int(args.num_inference_steps)
 
     env = IsaacGymBulbEnv(
         isaacgym_envs_path=os.path.abspath(args.isaacgym_envs_path),
@@ -151,7 +155,10 @@ def main() -> None:
     if args.verbose:
         print(f"Loaded checkpoint: {ckpt_path}")
         print(f"Policy weights source: {loaded_from}")
-        print(f"Using n_obs_steps={n_obs_steps}, action chunk={policy.n_action_steps}, horizon={policy.horizon}")
+        print(
+            f"Using n_obs_steps={n_obs_steps}, action chunk={policy.n_action_steps}, "
+            f"horizon={policy.horizon}, num_inference_steps={getattr(policy, 'num_inference_steps', 'n/a')}"
+        )
         print(f"Evaluating on Isaac bulb env for {args.num_episodes} episode(s)")
 
     total_successes = 0
@@ -185,7 +192,7 @@ def main() -> None:
 
         while not done and step_idx < args.max_episode_length:
             obs_dict = _stack_history(image_hist, state_hist, device)
-            with torch.no_grad():
+            with torch.inference_mode():
                 action_dict = policy.predict_action(obs_dict)
 
             action_chunk = action_dict["action"]  # (B, n_action_steps, 7)
