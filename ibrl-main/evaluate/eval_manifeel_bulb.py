@@ -68,6 +68,16 @@ def _obs_from_env(obs: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, torch.Ten
     return wrist, state
 
 
+def _wrist_frame_u8(obs: Dict[str, torch.Tensor]) -> np.ndarray:
+    wrist = obs["wrist"][0].detach().cpu().float()
+    if wrist.dim() != 3:
+        raise ValueError(f"Expected wrist frame (C,H,W), got {tuple(wrist.shape)}")
+    if float(wrist.max()) <= 1.01:
+        wrist = wrist * 255.0
+    wrist = wrist.clamp(0, 255).to(torch.uint8).permute(1, 2, 0).contiguous()
+    return wrist.numpy()
+
+
 def _stack_history(
     image_hist: Deque[torch.Tensor],
     state_hist: Deque[torch.Tensor],
@@ -141,6 +151,7 @@ def main() -> None:
         obs = env.reset()
         wrist, state = _obs_from_env(obs)
         rollout_states = [obs["state"][0].detach().cpu().numpy().astype(np.float32)]
+        rollout_wrist_frames = [_wrist_frame_u8(obs)]
         rollout_actions = []
         rollout_rewards = []
         rollout_dones = []
@@ -178,6 +189,7 @@ def main() -> None:
             rollout_dones.append(bool(dones[0].item()))
             rollout_successes.append(bool(successes[0].item()))
             rollout_states.append(obs["state"][0].detach().cpu().numpy().astype(np.float32))
+            rollout_wrist_frames.append(_wrist_frame_u8(obs))
 
             done = bool(dones[0].item())
             success = bool(successes[0].item())
@@ -202,6 +214,7 @@ def main() -> None:
             np.savez_compressed(
                 str(out_path),
                 states=np.stack(rollout_states, axis=0),
+                wrist=np.stack(rollout_wrist_frames, axis=0),
                 actions=np.stack(rollout_actions, axis=0),
                 rewards=np.asarray(rollout_rewards, dtype=np.float32),
                 dones=np.asarray(rollout_dones, dtype=np.bool_),
