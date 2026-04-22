@@ -101,6 +101,8 @@ def main() -> None:
     parser.add_argument("--rl_device", default="cuda:0")
     parser.add_argument("--graphics_device_id", type=int, default=0)
     parser.add_argument("--headless", type=int, default=1)
+    parser.add_argument("--rl_camera", default="wrist", help="Policy-side camera key")
+    parser.add_argument("--isaac_camera", default="wrist_2", help="Isaac-side camera key")
     parser.add_argument("--verbose", type=int, default=1)
     parser.add_argument("--num_inference_steps", type=int, default=20, help="Override diffusion denoising steps during eval")
     parser.add_argument("--log_every", type=int, default=1, help="Print step/reward every N env steps (0 disables)")
@@ -131,8 +133,8 @@ def main() -> None:
         headless=bool(args.headless),
         seed=int(args.seed),
         max_episode_length=int(args.max_episode_length),
-        rl_camera="wrist",
-        isaac_camera="wrist_2",
+        rl_camera=str(args.rl_camera),
+        isaac_camera=str(args.isaac_camera),
         image_hw=(256, 256),
     )
 
