@@ -96,7 +96,7 @@ env:
           is_body_camera: True
           actor_name: franka
           attach_link_name: panda_hand
-          image_size: [64, 64]
+          image_size: [256, 256]
           image_type: rgb
           horizontal_fov: 75.0
           camera_pose: [[0.045, 0, 0.04], [0.5, 0, 0.866, 0]]     # R.from_euler('xyz', [0, -np.pi / 2, np.pi]).as_quat()
