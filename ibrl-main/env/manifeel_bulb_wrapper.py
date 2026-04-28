@@ -98,15 +98,13 @@ class ManiFeelBulbVecEnv:
         if extra_overrides:
             overrides.extend(extra_overrides)
 
+        from manifeel.envs.vistac_isaacgym_multiple_env_wrapper import MultipleIsaacEnvWrapper
         GlobalHydra.instance().clear()
         with initialize_config_dir(config_dir=config_dir, version_base="1.1"):
             cfg = compose(config_name="isaacgym_config_bulb", overrides=overrides)
-        cfg.shape_meta = vision_cfg.shape_meta
-        cfg.light_factor = float(light_factor)
-
-        from manifeel.envs.vistac_isaacgym_multiple_env_wrapper import MultipleIsaacEnvWrapper
-
-        self._env = MultipleIsaacEnvWrapper(cfg)
+            cfg.shape_meta = vision_cfg.shape_meta
+            cfg.light_factor = float(light_factor)
+            self._env = MultipleIsaacEnvWrapper(cfg)
         self._seed = int(seed)
         self._episode_reward = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
         self._episode_step = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
