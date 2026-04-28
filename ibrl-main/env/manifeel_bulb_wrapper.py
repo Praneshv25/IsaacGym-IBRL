@@ -107,6 +107,17 @@ class ManiFeelBulbVecEnv:
             cfg = compose(config_name="isaacgym_config_bulb", overrides=overrides)
             cfg.shape_meta = vision_cfg.shape_meta
             cfg.light_factor = float(light_factor)
+            # The TacSL task classes receive only cfg.task, but their YAML uses
+            # interpolations that expect a few top-level Isaac Gym keys.
+            cfg.task.pipeline = cfg.pipeline
+            cfg.task.sim_device = cfg.sim_device
+            cfg.task.rl_device = cfg.rl_device
+            cfg.task.graphics_device_id = cfg.graphics_device_id
+            cfg.task.physics_engine = cfg.physics_engine
+            cfg.task.num_threads = cfg.num_threads
+            cfg.task.solver_type = cfg.solver_type
+            cfg.task.num_subscenes = cfg.num_subscenes
+            cfg.task.num_envs = cfg.num_envs
             cfg.task.env.use_isaac_gym_tactile = False
             cfg.task.env.use_tactile_field_obs = False
             cfg.task.env.use_shear_force = False
