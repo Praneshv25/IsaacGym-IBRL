@@ -1,0 +1,51 @@
+seed: 1
+
+diffusion_policy_root: "/Users/PV/Desktop/CS 441/IsaacGym-IBRL/Diffusion Policy/diffusion_policy"
+manifeel_root: "/Users/PV/Desktop/CS 441/IsaacGym-IBRL/Diffusion Policy/manifeel"
+isaacgym_envs_path: "/Users/PV/Desktop/CS 441/IsaacGym-IBRL/Diffusion Policy/manifeel-isaacgymenvs"
+dp_checkpoint: "/Users/PV/Desktop/CS 441/IsaacGym-IBRL/Diffusion Checkpoint Epoch 399.ckpt"
+
+num_train_envs: 8
+num_eval_envs: 4
+num_eval_episode: 50
+num_eval_videos: 2
+episode_length: 800
+image_size: 256
+rl_camera: "wrist"
+external_camera: "client"
+light_factor: 1.0
+env_reward_scale: 1.0
+sim_device: "cuda:0"
+rl_device: "cuda:0"
+graphics_device_id: 0
+headless: 1
+force_render: 1
+eval_force_render: 1
+video_fps: 10
+
+q_agent:
+  device: "cuda"
+  lr: 0.0001
+  critic_target_tau: 0.01
+  stddev_clip: 0.3
+  use_prop: 1
+  enc_type: "vit"
+  act_method: "ibrl"
+  bootstrap_method: "ibrl"
+
+stddev_max: 1.0
+stddev_min: 0.1
+stddev_step: 500000
+nstep: 3
+discount: 0.99
+replay_buffer_size: 500
+batch_size: 256
+num_critic_update: 1
+update_freq: 1
+num_warm_up_episode: 20
+num_train_step: 200000
+log_per_step: 10000
+add_bc_loss: 0
+
+save_dir: "exps/rl/manifeel_bulb/seed1"
+use_wb: 1
