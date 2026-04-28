@@ -1,3 +1,4 @@
+from __future__ import annotations
 import os
 import sys
 from pathlib import Path
@@ -29,10 +30,8 @@ def _register_omegaconf_resolvers() -> None:
         "eval": eval,
     }
     for name, fn in resolvers.items():
-        try:
+        if not OmegaConf.has_resolver(name):
             OmegaConf.register_new_resolver(name, fn)
-        except Exception:
-            pass
 
 
 class ManiFeelBulbVecEnv:

@@ -4,6 +4,8 @@ import sys
 from dataclasses import dataclass, field
 from typing import Dict, List
 
+import isaacgym
+
 import numpy as np
 import pyrallis
 import torch
