@@ -77,6 +77,7 @@ def _register_omegaconf_resolvers() -> None:
 
 def make_tacsl_bulb_task(
     *,
+    manifeel_root: str,
     isaacgym_envs_path: str,
     num_envs: int,
     sim_device: str,
@@ -99,8 +100,11 @@ def make_tacsl_bulb_task(
 
     Parameters
     ----------
+    manifeel_root:
+        Filesystem path to the ManiFeel repo root (the directory that
+        contains ``manifeel/config/isaacgym_config_bulb.yaml``).
     isaacgym_envs_path:
-        Filesystem path to the root of the ``manifeel-isaacgymenvs-*`` repo
+        Filesystem path to the root of the ``manifeel-isaacgymenvs`` repo
         (i.e. the directory that contains ``isaacgymenvs/``).
     num_envs:
         Number of parallel simulation environments.
@@ -137,22 +141,20 @@ def make_tacsl_bulb_task(
     # reset randomization actually changes when the caller changes `seed`.
     seed = set_seed(int(seed), torch_deterministic=False, rank=0)
 
-    cfg_dir = os.path.abspath(os.path.join(isaacgym_envs_path, "isaacgymenvs", "cfg"))
+    cfg_dir = os.path.abspath(os.path.join(manifeel_root, "manifeel", "config"))
 
     # Clear any previous hydra initialisation so we can re-init
     GlobalHydra.instance().clear()
 
-    # Base overrides: disable every sensor so the env is pure state-based
-    # ``config.yaml`` defaults to ``train=${task}PPO`` → ``TacSLTaskBulbPPO``,
-    # which is not shipped in manifeel-isaacgymenvs-tacsl; use the bundled
-    # bulb train config instead (override via ``extra_overrides`` if your fork
-    # differs).
+    # Base overrides: compose the bulb task from ManiFeel's config tree,
+    # then directly instantiate TacSLTaskBulb from manifeel-isaacgymenvs.
     base_overrides: List[str] = [
-        "task=TacSLTaskBulb",
-        "train=TacSLTaskBulbInsertionPPO_LSTM_dict_AAC",
         f"num_envs={num_envs}",
         f"seed={seed}",
         f"headless={str(headless).lower()}",
+        f"sim_device={sim_device}",
+        f"rl_device={rl_device}",
+        f"graphics_device_id={graphics_device_id}",
         # ── disable cameras & tactile sensors ──────────────────────────────
         "task.env.use_camera_obs=false",
         "task.env.use_isaac_gym_tactile=false",
@@ -185,7 +187,7 @@ def make_tacsl_bulb_task(
     # ``hydra.compose`` again; GlobalHydra must still be active, so build the
     # env *inside* this context (do not exit before ``TacSLTaskBulb.__init__``).
     with initialize_config_dir(config_dir=cfg_dir, version_base="1.1"):
-        cfg = compose(config_name="config", overrides=base_overrides)
+        cfg = compose(config_name="isaacgym_config_bulb", overrides=base_overrides)
         task_config: dict = omegaconf_to_dict(cfg.task)
         task_config["env"]["numEnvs"] = num_envs
         if active_camera_names:
@@ -266,6 +268,7 @@ class IsaacGymBulbEnv:
     def __init__(
         self,
         *,
+        manifeel_root: str,
         isaacgym_envs_path: str,
         num_envs: int = 64,
         sim_device: str = "cuda:0",
@@ -318,6 +321,7 @@ class IsaacGymBulbEnv:
             active_cameras = None
 
         self.ig_env = make_tacsl_bulb_task(
+            manifeel_root=manifeel_root,
             isaacgym_envs_path=isaacgym_envs_path,
             num_envs=num_envs,
             sim_device=sim_device,

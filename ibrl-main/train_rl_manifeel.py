@@ -138,6 +138,7 @@ class Workspace:
 
     def _make_env(self, num_envs: int, force_render: int, seed_offset: int) -> IsaacGymBulbEnv:
         return IsaacGymBulbEnv(
+            manifeel_root=self.cfg.manifeel_root,
             isaacgym_envs_path=self.cfg.isaacgym_envs_path,
             num_envs=num_envs,
             sim_device=self.cfg.sim_device,
