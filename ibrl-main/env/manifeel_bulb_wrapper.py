@@ -9,7 +9,6 @@ except ImportError:
     pass
 
 import numpy as np
-import torch
 from hydra import compose, initialize_config_dir
 from hydra.core.global_hydra import GlobalHydra
 from omegaconf import OmegaConf
@@ -65,6 +64,9 @@ class ManiFeelBulbVecEnv:
         capture_video: bool = False,
         extra_overrides: Optional[List[str]] = None,
     ) -> None:
+        global torch
+        import torch
+
         self.manifeel_root = os.path.abspath(manifeel_root)
         self.isaacgym_envs_path = os.path.abspath(isaacgym_envs_path)
         self.num_envs = int(num_envs)
@@ -88,7 +90,7 @@ class ManiFeelBulbVecEnv:
 
         overrides = [
             f"num_envs={self.num_envs}",
-            f"seed={int(seed)}",
+            f"+seed={int(seed)}",
             f"sim_device={sim_device}",
             f"rl_device={rl_device}",
             f"graphics_device_id={int(graphics_device_id)}",
