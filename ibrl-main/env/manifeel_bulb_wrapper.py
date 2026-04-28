@@ -92,6 +92,9 @@ class ManiFeelBulbVecEnv:
             "task.env.use_isaac_gym_tactile=false",
             "task.env.use_tactile_field_obs=false",
             "task.env.use_shear_force=false",
+            "task.env.use_physx_gripper_control=false",
+            "task.env.franka_open_gripper_width=0.01",
+            "task.env.franka_close_gripper_width=0.01",
             f"task.env.obsDims.{self.rl_camera}=[{self.image_hw[0]},{self.image_hw[1]},3]",
             f"task.env.obsDims.{self.external_camera}=[{self.image_hw[0]},{self.image_hw[1]},3]",
         ]
@@ -197,7 +200,7 @@ class ManiFeelBulbVecEnv:
         obs_np, _, dones_np, _ = self._env.step(actions_np)
 
         rewards = self._env.envs.rew_buf.clone().to(self.device).float() * self.env_reward_scale
-        dones = torch.from_numpy(dones_np).to(self.device=device, dtype=torch.bool)
+        dones = torch.from_numpy(dones_np).to(device=self.device, dtype=torch.bool)
         successes = self._env.envs._check_success().bool()
         self._episode_reward += rewards
         self._episode_step += 1
