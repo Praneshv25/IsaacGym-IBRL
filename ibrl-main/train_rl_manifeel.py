@@ -14,7 +14,7 @@ import yaml
 import common_utils
 from bc.diffusion_policy_adapter import DiffusionPolicyAdapter
 from common_utils import ibrl_utils as utils
-from env.isaac_gym_wrapper import IsaacGymBulbEnv
+from env.manifeel_bulb_wrapper import ManiFeelBulbVecEnv
 from rl.q_agent import QAgent, QAgentConfig
 from rl.vec_replay import VecReplayBuffer
 
@@ -50,8 +50,8 @@ class MainConfig(common_utils.RunConfig):
     rl_device: str = "cuda:0"
     graphics_device_id: int = 0
     headless: int = 1
-    force_render: int = 1
-    eval_force_render: int = 1
+    force_render: int = 0
+    eval_force_render: int = 0
     video_fps: int = 10
 
     q_agent: QAgentConfig = field(default_factory=_default_q_agent_cfg)
@@ -136,8 +136,8 @@ class Workspace:
             replay_size=cfg.replay_buffer_size,
         )
 
-    def _make_env(self, num_envs: int, force_render: int, seed_offset: int) -> IsaacGymBulbEnv:
-        return IsaacGymBulbEnv(
+    def _make_env(self, num_envs: int, force_render: int, seed_offset: int) -> ManiFeelBulbVecEnv:
+        return ManiFeelBulbVecEnv(
             manifeel_root=self.cfg.manifeel_root,
             isaacgym_envs_path=self.cfg.isaacgym_envs_path,
             num_envs=num_envs,
@@ -146,10 +146,10 @@ class Workspace:
             graphics_device_id=self.cfg.graphics_device_id,
             headless=bool(self.cfg.headless),
             seed=self.cfg.seed + seed_offset,
+            n_obs_steps=self.n_obs_steps,
             env_reward_scale=self.cfg.env_reward_scale,
             rl_camera=self.cfg.rl_camera,
-            isaac_camera=self.cfg.isaac_camera,
-            extra_camera=self.cfg.external_camera,
+            external_camera=self.cfg.external_camera,
             image_hw=(self.cfg.image_size, self.cfg.image_size),
             max_episode_length=self.cfg.episode_length,
             force_render=bool(force_render),
