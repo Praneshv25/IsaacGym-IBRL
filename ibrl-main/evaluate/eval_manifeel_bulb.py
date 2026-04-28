@@ -201,6 +201,7 @@ def main() -> None:
                     f"[eval_manifeel_bulb] step={step_idx} reward={float(reward[0].item()):.6f} "
                     f"done={int(done)} success={int(success)}"
                 )
+                print(f"  action: {act[0].detach().cpu().numpy()}")
 
         total_successes += int(success)
         if args.verbose:
