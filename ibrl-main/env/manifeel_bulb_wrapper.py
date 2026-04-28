@@ -193,11 +193,11 @@ class ManiFeelBulbVecEnv:
     def step(
         self, actions: torch.Tensor
     ) -> Tuple[Dict[str, torch.Tensor], torch.Tensor, torch.Tensor, torch.Tensor]:
-        actions = actions.to(device=self.device, dtype=torch.float32)
-        raw_obs, raw_rewards, raw_resets, _ = self._env.envs.step(actions)
+        actions_np = actions.detach().to("cpu", dtype=torch.float32).numpy()
+        obs_np, _, dones_np, _ = self._env.step(actions_np)
 
-        rewards = raw_rewards.float() * self.env_reward_scale
-        dones = raw_resets.bool()
+        rewards = self._env.envs.rew_buf.clone().to(self.device).float() * self.env_reward_scale
+        dones = torch.from_numpy(dones_np).to(self.device=device, dtype=torch.bool)
         successes = self._env.envs._check_success().bool()
         self._episode_reward += rewards
         self._episode_step += 1
@@ -214,7 +214,6 @@ class ManiFeelBulbVecEnv:
             self._last_done_rewards = torch.zeros(0, dtype=torch.float32, device=self.device)
             self._last_done_successes = torch.zeros(0, dtype=torch.bool, device=self.device)
 
-        obs_np = self._env._transform_obs_data(raw_obs["obs"])
         obs_np = self._replace_done_obs(obs_np, done_ids)
         self._env.render_cache = obs_np
 
