@@ -104,6 +104,18 @@ class ManiFeelBulbVecEnv:
             cfg = compose(config_name="isaacgym_config_bulb", overrides=overrides)
             cfg.shape_meta = vision_cfg.shape_meta
             cfg.light_factor = float(light_factor)
+            cfg.task.env.use_isaac_gym_tactile = False
+            cfg.task.env.use_tactile_field_obs = False
+            cfg.task.env.use_shear_force = False
+            cfg.task.env.use_gelsight = False
+            for key in [
+                "left_tactile_camera_taxim",
+                "right_tactile_camera_taxim",
+                "tactile_force_field_right",
+                "tactile_depth_right",
+            ]:
+                if key in cfg.task.env.obsDims:
+                    del cfg.task.env.obsDims[key]
             self._env = MultipleIsaacEnvWrapper(cfg)
         self._seed = int(seed)
         self._episode_reward = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
