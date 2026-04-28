@@ -21,19 +21,6 @@ def _ensure_import_path(path: str) -> None:
         sys.path.insert(0, abs_path)
 
 
-def _register_omegaconf_resolvers() -> None:
-    resolvers = {
-        "eq": lambda x, y: x.lower() == y.lower(),
-        "contains": lambda x, y: x.lower() in y.lower(),
-        "if": lambda pred, a, b: a if pred else b,
-        "resolve_default": lambda default, arg: default if arg == "" else arg,
-        "eval": eval,
-    }
-    for name, fn in resolvers.items():
-        if not OmegaConf.has_resolver(name):
-            OmegaConf.register_new_resolver(name, fn)
-
-
 class ManiFeelBulbVecEnv:
     """Vectorized ManiFeel bulb environment with IBRL-friendly observations."""
 
@@ -81,7 +68,8 @@ class ManiFeelBulbVecEnv:
 
         _ensure_import_path(self.manifeel_root)
         _ensure_import_path(self.isaacgym_envs_path)
-        _register_omegaconf_resolvers()
+        if not OmegaConf.has_resolver("eval"):
+            OmegaConf.register_new_resolver("eval", eval)
 
         config_dir = os.path.join(self.manifeel_root, "manifeel", "config")
         vision_cfg_path = os.path.join(config_dir, "task", "vision_wrist.yaml")
