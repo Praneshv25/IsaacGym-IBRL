@@ -276,6 +276,7 @@ class IsaacGymBulbEnv:
         env_reward_scale: float = 1.0,
         rl_camera: str = "",
         isaac_camera: str = "wrist_2",
+        extra_camera: str = "",
         image_hw: Tuple[int, int] = (256, 256),
         socket_pos_initial: Optional[Tuple[float, float, float]] = None,
         socket_rot_initial: Optional[Tuple[float, float, float]] = None,
@@ -291,11 +292,15 @@ class IsaacGymBulbEnv:
         self.env_reward_scale = env_reward_scale
         self.rl_camera = str(rl_camera).strip()
         self.isaac_camera = str(isaac_camera).strip() if self.rl_camera else ""
+        self.extra_camera = str(extra_camera).strip()
         self.image_hw = (int(image_hw[0]), int(image_hw[1]))
 
         env_overrides = list(extra_overrides or [])
         if self.rl_camera:
             h, w = self.image_hw
+            active_cameras = [self.isaac_camera]
+            if self.extra_camera and self.extra_camera not in active_cameras:
+                active_cameras.append(self.extra_camera)
             env_overrides.extend(
                 [
                     "task.env.use_camera_obs=true",
@@ -307,6 +312,10 @@ class IsaacGymBulbEnv:
                     f"+task.env.obsDims.{self.isaac_camera}=[{h},{w},3]",
                 ]
             )
+            if self.extra_camera:
+                env_overrides.append(f"+task.env.obsDims.{self.extra_camera}=[{h},{w},3]")
+        else:
+            active_cameras = None
 
         self.ig_env = make_tacsl_bulb_task(
             isaacgym_envs_path=isaacgym_envs_path,
@@ -316,7 +325,7 @@ class IsaacGymBulbEnv:
             graphics_device_id=graphics_device_id,
             headless=headless,
             seed=seed,
-            active_camera_names=[self.isaac_camera] if self.rl_camera else None,
+            active_camera_names=active_cameras,
             socket_pos_initial=socket_pos_initial,
             socket_rot_initial=socket_rot_initial,
             socket_pos_noise=socket_pos_noise,
@@ -374,6 +383,33 @@ class IsaacGymBulbEnv:
                 image = image * 255.0
             obs[self.rl_camera] = image
         return obs
+
+    def render(self) -> np.ndarray:
+        """Return per-env uint8 HWC frames concatenating extra and wrist cameras when available."""
+        if not self.rl_camera:
+            raise RuntimeError("render() requires rl_camera to be enabled")
+
+        frame_keys: List[str] = []
+        if self.extra_camera:
+            frame_keys.append(self.extra_camera)
+        if self.isaac_camera:
+            frame_keys.append(self.isaac_camera)
+
+        frames: List[np.ndarray] = []
+        for key in frame_keys:
+            if key not in self.ig_env.obs_dict:
+                continue
+            raw = self.ig_env.obs_dict[key]
+            if raw.dim() != 4:
+                continue
+            img = raw
+            if float(img.max()) <= 1.01:
+                img = img * 255.0
+            frames.append(img.clamp(0, 255).to(torch.uint8).cpu().numpy())
+
+        if not frames:
+            raise RuntimeError("No camera tensors available for rendering")
+        return np.concatenate(frames, axis=2)
 
     def _apply_reset_for_done_envs(self, done_ids: torch.Tensor) -> None:
         """Call ``reset_idx`` on the done environments and refresh ``obs_dict``.

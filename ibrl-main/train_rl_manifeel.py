@@ -2,10 +2,9 @@ import copy
 import os
 import sys
 from dataclasses import dataclass, field
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
-import isaacgym
-
+import isaacgym  # noqa: F401
 import numpy as np
 import pyrallis
 import torch
@@ -13,9 +12,9 @@ import wandb
 import yaml
 
 import common_utils
-from common_utils import ibrl_utils as utils
 from bc.diffusion_policy_adapter import DiffusionPolicyAdapter
-from env.manifeel_bulb_wrapper import ManiFeelBulbVecEnv
+from common_utils import ibrl_utils as utils
+from env.isaac_gym_wrapper import IsaacGymBulbEnv
 from rl.q_agent import QAgent, QAgentConfig
 from rl.vec_replay import VecReplayBuffer
 
@@ -44,8 +43,8 @@ class MainConfig(common_utils.RunConfig):
     episode_length: int = 800
     image_size: int = 256
     rl_camera: str = "wrist"
+    isaac_camera: str = "wrist"
     external_camera: str = "client"
-    light_factor: float = 1.0
     env_reward_scale: float = 1.0
     sim_device: str = "cuda:0"
     rl_device: str = "cuda:0"
@@ -84,19 +83,18 @@ class MainConfig(common_utils.RunConfig):
 
 
 class Workspace:
-    def __init__(self, cfg: MainConfig, from_main: bool = True):
+    def __init__(self, cfg: MainConfig):
         self.cfg = cfg
         self.work_dir = cfg.save_dir
         print(f"workspace: {self.work_dir}")
 
-        if from_main:
-            common_utils.set_all_seeds(cfg.seed)
-            sys.stdout = common_utils.Logger(cfg.log_path, print_to_stdout=True)
-            pyrallis.dump(cfg, open(cfg.cfg_path, "w"))  # type: ignore[arg-type]
-            print(common_utils.wrap_ruler("config"))
-            with open(cfg.cfg_path, "r") as f:
-                print(f.read(), end="")
-            print(common_utils.wrap_ruler(""))
+        common_utils.set_all_seeds(cfg.seed)
+        sys.stdout = common_utils.Logger(cfg.log_path, print_to_stdout=True)
+        pyrallis.dump(cfg, open(cfg.cfg_path, "w"))  # type: ignore[arg-type]
+        print(common_utils.wrap_ruler("config"))
+        with open(cfg.cfg_path, "r") as f:
+            print(f.read(), end="")
+        print(common_utils.wrap_ruler(""))
 
         self.cfg_dict = yaml.safe_load(open(cfg.cfg_path, "r"))
         self.global_step = 0
@@ -123,11 +121,12 @@ class Workspace:
             cfg.rl_camera,
             cfg.q_agent,
         )
+        self.agent.add_bc_policy(self.bc_policy)
+
         self.ref_agent = None
         if cfg.add_bc_loss:
             self.ref_agent = copy.deepcopy(self.agent)
             self.ref_agent.cfg.act_method = "rl"
-        self.agent.add_bc_policy(self.bc_policy)
 
         self.replay = VecReplayBuffer(
             num_envs=self.train_env.num_envs,
@@ -137,9 +136,8 @@ class Workspace:
             replay_size=cfg.replay_buffer_size,
         )
 
-    def _make_env(self, num_envs: int, force_render: int, seed_offset: int) -> ManiFeelBulbVecEnv:
-        return ManiFeelBulbVecEnv(
-            manifeel_root=self.cfg.manifeel_root,
+    def _make_env(self, num_envs: int, force_render: int, seed_offset: int) -> IsaacGymBulbEnv:
+        return IsaacGymBulbEnv(
             isaacgym_envs_path=self.cfg.isaacgym_envs_path,
             num_envs=num_envs,
             sim_device=self.cfg.sim_device,
@@ -147,15 +145,60 @@ class Workspace:
             graphics_device_id=self.cfg.graphics_device_id,
             headless=bool(self.cfg.headless),
             seed=self.cfg.seed + seed_offset,
-            n_obs_steps=self.n_obs_steps,
-            max_episode_length=self.cfg.episode_length,
             env_reward_scale=self.cfg.env_reward_scale,
             rl_camera=self.cfg.rl_camera,
-            external_camera=self.cfg.external_camera,
+            isaac_camera=self.cfg.isaac_camera,
+            extra_camera=self.cfg.external_camera,
             image_hw=(self.cfg.image_size, self.cfg.image_size),
-            light_factor=self.cfg.light_factor,
+            max_episode_length=self.cfg.episode_length,
             force_render=bool(force_render),
         )
+
+    def _make_bc_history(self, obs: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
+        wrist = obs[self.cfg.rl_camera].unsqueeze(1).repeat(1, self.n_obs_steps, 1, 1, 1)
+        state = obs["prop"].unsqueeze(1).repeat(1, self.n_obs_steps, 1)
+        return wrist, state
+
+    def _step_bc_history(
+        self,
+        bc_wrist: torch.Tensor,
+        bc_state: torch.Tensor,
+        next_obs: Dict[str, torch.Tensor],
+        dones: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        next_wrist = next_obs[self.cfg.rl_camera]
+        next_state = next_obs["prop"]
+        next_bc_wrist = bc_wrist.clone()
+        next_bc_state = bc_state.clone()
+
+        done_ids = dones.nonzero(as_tuple=False).squeeze(-1)
+        active_mask = torch.ones(dones.shape[0], dtype=torch.bool, device=dones.device)
+        active_mask[done_ids] = False
+
+        if active_mask.any():
+            next_bc_wrist[active_mask, :-1] = bc_wrist[active_mask, 1:]
+            next_bc_wrist[active_mask, -1] = next_wrist[active_mask]
+            next_bc_state[active_mask, :-1] = bc_state[active_mask, 1:]
+            next_bc_state[active_mask, -1] = next_state[active_mask]
+
+        if done_ids.numel() > 0:
+            reset_wrist = next_wrist[done_ids].unsqueeze(1).repeat(1, self.n_obs_steps, 1, 1, 1)
+            reset_state = next_state[done_ids].unsqueeze(1).repeat(1, self.n_obs_steps, 1)
+            next_bc_wrist[done_ids] = reset_wrist
+            next_bc_state[done_ids] = reset_state
+
+        return next_bc_wrist, next_bc_state
+
+    def _augment_obs(
+        self,
+        obs: Dict[str, torch.Tensor],
+        bc_wrist: torch.Tensor,
+        bc_state: torch.Tensor,
+    ) -> Dict[str, torch.Tensor]:
+        out = dict(obs)
+        out["bc_wrist"] = bc_wrist
+        out["bc_state"] = bc_state
+        return out
 
     def _pack_replay_obs(self, obs: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         return {
@@ -164,8 +207,8 @@ class Workspace:
         }
 
     def _inflate_obs(self, obs: Dict[str, torch.Tensor]) -> None:
-        if "wrist" not in obs:
-            obs["wrist"] = obs["bc_wrist"][:, -1]
+        if self.cfg.rl_camera not in obs:
+            obs[self.cfg.rl_camera] = obs["bc_wrist"][:, -1].float()
         if "prop" not in obs:
             obs["prop"] = obs["bc_state"][:, -1]
         if "state" not in obs:
@@ -176,14 +219,18 @@ class Workspace:
         self._inflate_obs(batch.next_obs)
 
     def warm_up(self) -> None:
-        obs = self.train_env.reset()
+        raw_obs = self.train_env.reset()
+        bc_wrist, bc_state = self._make_bc_history(raw_obs)
+        obs = self._augment_obs(raw_obs, bc_wrist, bc_state)
         self.replay.reset_current_episodes()
         self.replay.new_episodes(self._pack_replay_obs(obs))
 
         while self.replay.size() < self.cfg.num_warm_up_episode:
             with torch.no_grad(), utils.eval_mode(self.bc_policy):
                 actions = self.bc_policy.act(obs, cpu=False)
-            next_obs, rewards, dones, successes = self.train_env.step(actions)
+            next_raw_obs, rewards, dones, successes = self.train_env.step(actions)
+            next_bc_wrist, next_bc_state = self._step_bc_history(bc_wrist, bc_state, next_raw_obs, dones)
+            next_obs = self._augment_obs(next_raw_obs, next_bc_wrist, next_bc_state)
             self.replay.add_step(
                 self._pack_replay_obs(next_obs),
                 actions,
@@ -192,11 +239,12 @@ class Workspace:
                 successes,
             )
             obs = next_obs
+            bc_wrist, bc_state = next_bc_wrist, next_bc_state
 
         print(f"Warm up done. #episodes: {self.replay.size()}")
 
-    def _record_eval_videos(self, videos: List[np.ndarray]) -> Dict[str, "wandb.Video"]:
-        payload: Dict[str, "wandb.Video"] = {}
+    def _record_eval_videos(self, videos: List[np.ndarray]) -> Dict[str, wandb.Video]:
+        payload: Dict[str, wandb.Video] = {}
         for idx, video in enumerate(videos):
             payload[f"test/video_{idx}"] = wandb.Video(
                 video.transpose(0, 3, 1, 2),
@@ -208,7 +256,9 @@ class Workspace:
     def eval(self) -> Dict[str, object]:
         scores: List[float] = []
         episode_rewards: List[float] = []
-        obs = self.eval_env.reset()
+        raw_obs = self.eval_env.reset()
+        bc_wrist, bc_state = self._make_bc_history(raw_obs)
+        obs = self._augment_obs(raw_obs, bc_wrist, bc_state)
         running_reward = torch.zeros(self.eval_env.num_envs, device=self.eval_env.device)
 
         num_video_envs = min(self.cfg.num_eval_videos, self.eval_env.num_envs)
@@ -221,8 +271,11 @@ class Workspace:
         with torch.no_grad(), utils.eval_mode(self.agent):
             while len(scores) < self.cfg.num_eval_episode:
                 actions = self.agent.act(obs, eval_mode=True, stddev=0.0, cpu=False)
-                obs, rewards, dones, successes = self.eval_env.step(actions)
+                next_raw_obs, rewards, dones, successes = self.eval_env.step(actions)
                 running_reward += rewards
+                next_bc_wrist, next_bc_state = self._step_bc_history(bc_wrist, bc_state, next_raw_obs, dones)
+                obs = self._augment_obs(next_raw_obs, next_bc_wrist, next_bc_state)
+                bc_wrist, bc_state = next_bc_wrist, next_bc_state
 
                 frames = self.eval_env.render()
                 for env_id in range(num_video_envs):
@@ -310,9 +363,13 @@ class Workspace:
         self.warm_up()
         stopwatch = common_utils.Stopwatch()
 
-        obs = self.train_env.reset()
+        raw_obs = self.train_env.reset()
+        bc_wrist, bc_state = self._make_bc_history(raw_obs)
+        obs = self._augment_obs(raw_obs, bc_wrist, bc_state)
         self.replay.reset_current_episodes()
         self.replay.new_episodes(self._pack_replay_obs(obs))
+        running_lengths = torch.zeros(self.train_env.num_envs, dtype=torch.long, device=self.train_env.device)
+        running_rewards = torch.zeros(self.train_env.num_envs, dtype=torch.float32, device=self.train_env.device)
 
         while self.global_step < self.cfg.num_train_step:
             with stopwatch.time("act"), torch.no_grad(), utils.eval_mode(self.agent):
@@ -321,7 +378,12 @@ class Workspace:
                 stat["data/stddev"].append(stddev)
 
             with stopwatch.time("env step"):
-                next_obs, rewards, dones, successes = self.train_env.step(actions)
+                next_raw_obs, rewards, dones, successes = self.train_env.step(actions)
+
+            running_lengths += 1
+            running_rewards += rewards
+            next_bc_wrist, next_bc_state = self._step_bc_history(bc_wrist, bc_state, next_raw_obs, dones)
+            next_obs = self._augment_obs(next_raw_obs, next_bc_wrist, next_bc_state)
 
             with stopwatch.time("add"):
                 self.replay.add_step(
@@ -338,19 +400,22 @@ class Workspace:
             if done_ids.numel() > 0:
                 self.global_episode += int(done_ids.numel())
                 stat["score/train_score"].append(
-                    float(self.train_env.last_done_successes.float().sum().item()),
+                    float(successes[done_ids].float().sum().item()),
                     int(done_ids.numel()),
                 )
                 stat["data/episode_len"].append(
-                    float(self.train_env.last_done_steps.float().sum().item()),
+                    float(running_lengths[done_ids].float().sum().item()),
                     int(done_ids.numel()),
                 )
                 stat["data/episode_reward"].append(
-                    float(self.train_env.last_done_rewards.sum().item()),
+                    float(running_rewards[done_ids].sum().item()),
                     int(done_ids.numel()),
                 )
+                running_lengths[done_ids] = 0
+                running_rewards[done_ids] = 0.0
 
             obs = next_obs
+            bc_wrist, bc_state = next_bc_wrist, next_bc_state
 
             if self.global_iter % self.cfg.update_freq == 0:
                 with stopwatch.time("train"):
