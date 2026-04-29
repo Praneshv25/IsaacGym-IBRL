@@ -240,20 +240,12 @@ class Workspace:
         return runner
 
     def _pack_replay_obs(self, obs: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-        wrist = obs[self.cfg.rl_camera]
         prop = obs["prop"]
         state = obs["state"]
         print(
             "[ibrl] pack input "
-            f"{self.cfg.rl_camera}:shape={tuple(wrist.shape)} dtype={wrist.dtype} device={wrist.device}; "
             f"prop:shape={tuple(prop.shape)} dtype={prop.dtype} device={prop.device}; "
             f"state:shape={tuple(state.shape)} dtype={state.dtype} device={state.device}",
-            flush=True,
-        )
-
-        wrist_out = wrist.detach().to(dtype=torch.uint8).cpu().contiguous()
-        print(
-            f"[ibrl] pack {self.cfg.rl_camera} ok shape={tuple(wrist_out.shape)} dtype={wrist_out.dtype}",
             flush=True,
         )
         prop_out = prop.detach().to(dtype=torch.float32).cpu().contiguous()
@@ -262,7 +254,6 @@ class Workspace:
         print(f"[ibrl] pack state ok shape={tuple(state_out.shape)} dtype={state_out.dtype}", flush=True)
 
         return {
-            self.cfg.rl_camera: wrist_out,
             "prop": prop_out,
             "state": state_out,
         }
