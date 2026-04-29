@@ -251,6 +251,9 @@ class Workspace:
             obs["bc_state"].shape[1] * obs["bc_state"].shape[2],
         )
         return {
+            self.cfg.rl_camera: obs[self.cfg.rl_camera].to(dtype=torch.uint8).contiguous(),
+            "prop": obs["prop"].to(dtype=torch.float32).contiguous(),
+            "state": obs["state"].to(dtype=torch.float32).contiguous(),
             "bc_wrist": bc_wrist.to(dtype=torch.uint8).contiguous(),
             "bc_state": bc_state.to(dtype=torch.float32).contiguous(),
         }
@@ -278,7 +281,9 @@ class Workspace:
         obs = self.train_env.reset()
         _dbg("[ibrl] warmup reset ok")
         self.replay.reset_current_episodes()
+        _dbg("[ibrl] warmup new_episodes")
         self.replay.new_episodes(self._pack_replay_obs(obs))
+        _dbg("[ibrl] warmup new_episodes ok")
 
         while self.replay.size() < self.cfg.num_warm_up_episode:
             _dbg("[ibrl] warmup bc act")
