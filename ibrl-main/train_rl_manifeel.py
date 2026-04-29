@@ -151,9 +151,8 @@ class Workspace:
         print("[ibrl] creating train env")
         self.train_env = self._make_env(cfg.num_train_envs, cfg.force_render, seed_offset=0)
         print("[ibrl] train env ready")
-        print("[ibrl] creating eval runner")
-        self.eval_runner = self._make_eval_runner()
-        print("[ibrl] eval runner ready")
+        self.eval_runner = None
+        print("[ibrl] eval runner deferred")
 
         self.agent = QAgent(
             False,
@@ -279,6 +278,10 @@ class Workspace:
         print(f"Warm up done. #episodes: {self.replay.size()}")
 
     def eval(self) -> Dict[str, object]:
+        if self.eval_runner is None:
+            print("[ibrl] creating eval runner")
+            self.eval_runner = self._make_eval_runner()
+            print("[ibrl] eval runner ready")
         with torch.no_grad(), utils.eval_mode(self.agent):
             self.eval_policy.reset()
             log_data = self.eval_runner.run(self.eval_policy)
