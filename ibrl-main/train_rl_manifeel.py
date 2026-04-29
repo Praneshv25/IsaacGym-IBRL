@@ -1,4 +1,5 @@
 import copy
+import gc
 import os
 import sys
 from dataclasses import dataclass, field
@@ -231,8 +232,6 @@ class Workspace:
             )
 
         self.train_env = self._make_env(cfg.num_train_envs, cfg.force_render, seed_offset=0)
-        self.eval_runner = None
-
         self.agent = QAgent(
             False,
             self.train_env.observation_shape,
@@ -373,11 +372,20 @@ class Workspace:
         return obs
 
     def eval(self) -> Dict[str, object]:
-        if self.eval_runner is None:
-            self.eval_runner = self._make_eval_runner()
-        with torch.no_grad(), utils.eval_mode(self.agent):
-            self.eval_policy.reset()
-            log_data = self.eval_runner.run(self.eval_policy)
+        runner = self._make_eval_runner()
+        try:
+            with torch.no_grad(), utils.eval_mode(self.agent):
+                self.eval_policy.reset()
+                log_data = runner.run(self.eval_policy)
+        finally:
+            try:
+                runner.env.close()
+            except Exception:
+                pass
+            del runner
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
         videos = [value for key, value in log_data.items() if key.startswith("test/sim_video_")]
         return {
@@ -407,7 +415,7 @@ class Workspace:
         stopwatch: common_utils.Stopwatch,
         stat: common_utils.MultiCounter,
         saver: common_utils.TopkSaver,
-    ) -> None:
+    ) -> tuple[Dict[str, torch.Tensor], torch.Tensor, torch.Tensor]:
         elapsed_time = stopwatch.elapsed_time_since_reset
         stat["other/speed"].append(self.cfg.log_per_step / max(elapsed_time, 1e-6))
         stat["other/elapsed_time"].append(elapsed_time)
@@ -416,6 +424,17 @@ class Workspace:
         stat["other/train_step"].append(self.train_step)
         stat["other/replay"].append(self.replay.size())
         stat["score/num_success"].append(self.replay.num_success)
+
+        saver.save(self.agent.state_dict(), None, save_latest=True)
+
+        try:
+            self.train_env.close()
+        except Exception:
+            pass
+        self.train_env = None
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         with stopwatch.time("eval"):
             eval_metrics = self.eval()
@@ -435,6 +454,11 @@ class Workspace:
         stopwatch.summary(reset=True)
         print("total time:", common_utils.sec2str(stopwatch.total_time))
         print(common_utils.get_mem_usage())
+        self.train_env = self._make_env(self.cfg.num_train_envs, self.cfg.force_render, seed_offset=0)
+        obs = self.train_env.reset()
+        running_lengths = torch.zeros(self.train_env.num_envs, dtype=torch.long, device=self.train_env.device)
+        running_rewards = torch.zeros(self.train_env.num_envs, dtype=torch.float32, device=self.train_env.device)
+        return obs, running_lengths, running_rewards
 
     def train(self) -> None:
         stat = common_utils.MultiCounter(
@@ -510,7 +534,7 @@ class Workspace:
                     self.train_step += 1
 
             if self.global_step % self.cfg.log_per_step < self.train_env.num_envs:
-                self.log_and_save(stopwatch, stat, saver)
+                obs, running_lengths, running_rewards = self.log_and_save(stopwatch, stat, saver)
 
         train_bar.close()
 
