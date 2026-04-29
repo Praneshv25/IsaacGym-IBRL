@@ -261,8 +261,10 @@ class Workspace:
         self.replay.new_episodes(self._pack_replay_obs(obs))
 
         while self.replay.size() < self.cfg.num_warm_up_episode:
+            print("[ibrl] warmup bc act")
             with torch.no_grad(), utils.eval_mode(self.bc_policy):
                 actions = self.bc_policy.act(obs, cpu=False)
+            print("[ibrl] warmup bc act ok")
             print("[ibrl] warmup step")
             next_obs, rewards, dones, successes = self.train_env.step(actions)
             print("[ibrl] warmup step ok")
