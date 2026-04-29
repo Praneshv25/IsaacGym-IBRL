@@ -130,38 +130,26 @@ class ManiFeelBulbVecEnv:
             rank=0,
         )
 
-    def _dbg(self, msg: str) -> None:
-        print(msg, flush=True)
-
     def _extract_current_obs(self, obs: Dict[str, "torch.Tensor"]) -> Tuple["torch.Tensor", "torch.Tensor"]:
         global torch
 
-        self._dbg("[env] extract before wrist read")
         wrist = obs[self.isaac_camera]
-        self._dbg("[env] extract after wrist read")
         if wrist.dim() == 4 and wrist.shape[-1] == 3:
-            self._dbg("[env] extract before wrist permute")
             wrist = wrist.permute(0, 3, 1, 2)
-            self._dbg("[env] extract after wrist permute")
         wrist = wrist.detach().to(self.device).float()
-        self._dbg("[env] extract after wrist to-float")
         if tuple(wrist.shape[-2:]) != self.image_hw:
-            self._dbg(f"[env] extract before wrist resize from {tuple(wrist.shape[-2:])} to {self.image_hw}")
             wrist = F.interpolate(
                 wrist,
                 size=self.image_hw,
                 mode="bilinear",
                 align_corners=False,
             )
-            self._dbg("[env] extract after wrist resize")
         if float(wrist.max()) <= 1.01:
             wrist = wrist * 255.0
-        self._dbg("[env] extract after wrist scale")
 
         ee_pos = obs["ee_pos"].detach().to(self.device).float()
         ee_quat = obs["ee_quat"].detach().to(self.device).float()
         state = torch.cat([ee_pos, ee_quat], dim=1)
-        self._dbg("[env] extract after state concat")
         return wrist, state
 
     def _set_history(self, wrist: "torch.Tensor", state: "torch.Tensor", env_ids: Optional["torch.Tensor"] = None) -> None:
@@ -210,21 +198,12 @@ class ManiFeelBulbVecEnv:
         reset_out = self.envs.reset()
         return reset_out["obs"]
 
-    def _reset_done_envs(self, done_ids: "torch.Tensor") -> Dict[str, "torch.Tensor"]:
-        self.envs.reset_idx(done_ids)
-        self.envs.compute_observations()
-        return self.envs.obs_dict
-
     def reset(self) -> Dict[str, "torch.Tensor"]:
         self._episode_reward.zero_()
         self._episode_step.zero_()
-        self._dbg("[env] reset before raw_reset")
         obs = self._raw_reset()
-        self._dbg("[env] reset after raw_reset")
         wrist, state = self._extract_current_obs(obs)
-        self._dbg("[env] reset after extract")
         self._set_history(wrist, state)
-        self._dbg("[env] reset after set_history")
         return self._format_obs(obs)
 
     def step(self, actions: "torch.Tensor"):
@@ -248,12 +227,14 @@ class ManiFeelBulbVecEnv:
 
         done_ids = dones.nonzero(as_tuple=False).squeeze(-1)
         if done_ids.numel() > 0:
-            self._last_done_steps = self._episode_step[done_ids].clone()
-            self._last_done_rewards = self._episode_reward[done_ids].clone()
-            self._last_done_successes = successes[done_ids].clone()
-            reset_obs = self._reset_done_envs(done_ids)
-            for key in obs.keys():
-                obs[key][done_ids] = reset_obs[key][done_ids]
+            # TacSL bulb appears to have a broken subset-reset path. To keep
+            # training stable, reset the full vector env whenever any env ends.
+            self._last_done_steps = self._episode_step.clone()
+            self._last_done_rewards = self._episode_reward.clone()
+            self._last_done_successes = successes.clone()
+            obs = self._raw_reset()
+            dones = torch.ones_like(dones, device=self.device, dtype=torch.bool)
+            done_ids = torch.arange(self.num_envs, device=self.device)
         else:
             self._last_done_steps = torch.zeros(0, dtype=torch.long, device=self.device)
             self._last_done_rewards = torch.zeros(0, dtype=torch.float32, device=self.device)
@@ -263,8 +244,8 @@ class ManiFeelBulbVecEnv:
         self._append_history(wrist, state, done_ids)
 
         if done_ids.numel() > 0:
-            self._episode_reward[done_ids] = 0.0
-            self._episode_step[done_ids] = 0
+            self._episode_reward.zero_()
+            self._episode_step.zero_()
 
         return self._format_obs(obs), rewards, dones, successes
 

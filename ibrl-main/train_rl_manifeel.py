@@ -15,6 +15,7 @@ import hydra
 from hydra import initialize_config_dir
 from hydra.core.global_hydra import GlobalHydra
 from omegaconf import OmegaConf
+from tqdm.auto import tqdm
 
 import common_utils
 from bc.diffusion_policy_adapter import DiffusionPolicyAdapter
@@ -112,10 +113,6 @@ class _QAgentEvalPolicy:
         }
         action = self.agent.act(agent_obs, eval_mode=True, stddev=0.0, cpu=False)
         return {"action": action.unsqueeze(1)}
-
-
-def _dbg(msg: str) -> None:
-    print(msg, flush=True)
 
 
 class _GpuBatch:
@@ -233,11 +230,8 @@ class Workspace:
                 f"Use rl_camera={cfg.rl_camera!r} so train and eval both see the same ManiFeel view."
             )
 
-        _dbg("[ibrl] creating train env")
         self.train_env = self._make_env(cfg.num_train_envs, cfg.force_render, seed_offset=0)
-        _dbg("[ibrl] train env ready")
         self.eval_runner = None
-        _dbg("[ibrl] eval runner deferred")
 
         self.agent = QAgent(
             False,
@@ -322,22 +316,9 @@ class Workspace:
         wrist = obs[self.cfg.rl_camera]
         prop = obs["prop"]
         state = obs["state"]
-        print(
-            "[ibrl] pack input "
-            f"{self.cfg.rl_camera}:shape={tuple(wrist.shape)} dtype={wrist.dtype} device={wrist.device}; "
-            f"prop:shape={tuple(prop.shape)} dtype={prop.dtype} device={prop.device}; "
-            f"state:shape={tuple(state.shape)} dtype={state.dtype} device={state.device}",
-            flush=True,
-        )
         wrist_out = wrist.detach().clone().to(dtype=torch.uint8).contiguous()
-        print(
-            f"[ibrl] pack {self.cfg.rl_camera} ok shape={tuple(wrist_out.shape)} dtype={wrist_out.dtype}",
-            flush=True,
-        )
         prop_out = prop.detach().clone().to(dtype=torch.float32).contiguous()
-        print(f"[ibrl] pack prop ok shape={tuple(prop_out.shape)} dtype={prop_out.dtype}", flush=True)
         state_out = state.detach().clone().to(dtype=torch.float32).contiguous()
-        print(f"[ibrl] pack state ok shape={tuple(state_out.shape)} dtype={state_out.dtype}", flush=True)
 
         return {
             self.cfg.rl_camera: wrist_out,
@@ -364,24 +345,18 @@ class Workspace:
         self._inflate_obs(batch.next_obs)
 
     def warm_up(self) -> Dict[str, torch.Tensor]:
-        _dbg("[ibrl] warmup reset")
         obs = self.train_env.reset()
-        _dbg("[ibrl] warmup reset ok")
+        warmup_bar = tqdm(
+            total=self.cfg.num_warm_up_episode,
+            desc="Warmup",
+            leave=False,
+        )
+        last_episode_count = 0
 
         while self.replay.num_episode < self.cfg.num_warm_up_episode:
-            _dbg("[ibrl] warmup bc act")
             with torch.no_grad(), utils.eval_mode(self.bc_policy):
                 actions = self.bc_policy.act(obs, cpu=False)
-            _dbg("[ibrl] warmup bc act ok")
-            _dbg("[ibrl] warmup step")
             next_obs, rewards, dones, successes = self.train_env.step(actions)
-            _dbg("[ibrl] warmup step ok")
-            print(
-                f"[ibrl] warmup step stats reward_shape={tuple(rewards.shape)} "
-                f"done_sum={int(dones.sum().item())} success_sum={int(successes.sum().item())}",
-                flush=True,
-            )
-            _dbg("[ibrl] warmup add_step")
             self.replay.add_step(
                 self._pack_replay_obs(obs),
                 self._pack_replay_obs(next_obs),
@@ -390,17 +365,18 @@ class Workspace:
                 dones,
                 successes,
             )
-            _dbg("[ibrl] warmup add_step ok")
             obs = next_obs
+            if self.replay.num_episode > last_episode_count:
+                warmup_bar.update(self.replay.num_episode - last_episode_count)
+                last_episode_count = self.replay.num_episode
 
+        warmup_bar.close()
         print(f"Warm up done. #episodes: {self.replay.size()}")
         return obs
 
     def eval(self) -> Dict[str, object]:
         if self.eval_runner is None:
-            _dbg("[ibrl] creating eval runner")
             self.eval_runner = self._make_eval_runner()
-            _dbg("[ibrl] eval runner ready")
         with torch.no_grad(), utils.eval_mode(self.agent):
             self.eval_policy.reset()
             log_data = self.eval_runner.run(self.eval_policy)
@@ -412,30 +388,21 @@ class Workspace:
         }
 
     def rl_train(self, stat: common_utils.MultiCounter) -> None:
-        _dbg("[ibrl] rl_train start")
         stddev = utils.schedule(self.cfg.stddev_schedule, self.global_step)
         for idx in range(self.cfg.num_critic_update):
-            print(f"[ibrl] rl_train sample idx={idx}", flush=True)
             batch = self.replay.sample(self.cfg.batch_size, self.cfg.rl_device)
-            _dbg("[ibrl] rl_train sample ok")
             self._inflate_batch(batch)
-            _dbg("[ibrl] rl_train inflate batch ok")
             update_actor = idx == self.cfg.num_critic_update - 1
             bc_batch = None
             ref_agent = None
             if update_actor and self.cfg.add_bc_loss:
-                _dbg("[ibrl] rl_train bc sample")
                 bc_batch = self.replay.sample(self.cfg.batch_size, self.cfg.rl_device)
                 self._inflate_batch(bc_batch)
-                _dbg("[ibrl] rl_train bc sample ok")
                 ref_agent = self.ref_agent
                 assert ref_agent is not None
-            _dbg("[ibrl] rl_train agent.update")
             metrics = self.agent.update(batch, stddev, update_actor, bc_batch, ref_agent)
-            _dbg("[ibrl] rl_train agent.update ok")
             stat.append(metrics)
             stat["data/discount"].append(batch.bootstrap.mean().item())
-        _dbg("[ibrl] rl_train done")
 
     def log_and_save(
         self,
@@ -484,35 +451,28 @@ class Workspace:
         saver = common_utils.TopkSaver(save_dir=self.work_dir, topk=1)
 
         obs = self.warm_up()
-        _dbg("[ibrl] warmup returned obs")
         stopwatch = common_utils.Stopwatch()
         running_lengths = torch.zeros(self.train_env.num_envs, dtype=torch.long, device=self.train_env.device)
         running_rewards = torch.zeros(self.train_env.num_envs, dtype=torch.float32, device=self.train_env.device)
-        _dbg("[ibrl] train loop start")
+        train_bar = tqdm(
+            total=self.cfg.num_train_step,
+            desc="Train",
+            initial=min(self.global_step, self.cfg.num_train_step),
+        )
 
         while self.global_step < self.cfg.num_train_step:
             with stopwatch.time("act"), torch.no_grad(), utils.eval_mode(self.agent):
-                _dbg("[ibrl] train act")
                 stddev = utils.schedule(self.cfg.stddev_schedule, self.global_step)
                 actions = self.agent.act(obs, eval_mode=False, stddev=stddev, cpu=False)
                 stat["data/stddev"].append(stddev)
-                _dbg("[ibrl] train act ok")
 
             with stopwatch.time("env step"):
-                _dbg("[ibrl] train env step")
                 next_obs, rewards, dones, successes = self.train_env.step(actions)
-                _dbg("[ibrl] train env step ok")
-                print(
-                    f"[ibrl] train step stats reward_shape={tuple(rewards.shape)} "
-                    f"done_sum={int(dones.sum().item())} success_sum={int(successes.sum().item())}",
-                    flush=True,
-                )
 
             running_lengths += 1
             running_rewards += rewards
 
             with stopwatch.time("add"):
-                _dbg("[ibrl] train add_step")
                 self.replay.add_step(
                     self._pack_replay_obs(obs),
                     self._pack_replay_obs(next_obs),
@@ -521,9 +481,10 @@ class Workspace:
                     dones,
                     successes,
                 )
-                _dbg("[ibrl] train add_step ok")
                 self.global_iter += 1
                 self.global_step += self.train_env.num_envs
+                train_bar.n = min(self.global_step, self.cfg.num_train_step)
+                train_bar.refresh()
 
             done_ids = dones.nonzero(as_tuple=False).squeeze(-1)
             if done_ids.numel() > 0:
@@ -547,13 +508,13 @@ class Workspace:
 
             if self.global_iter % self.cfg.update_freq == 0:
                 with stopwatch.time("train"):
-                    _dbg("[ibrl] train update block")
                     self.rl_train(stat)
                     self.train_step += 1
-                    _dbg("[ibrl] train update block ok")
 
             if self.global_step % self.cfg.log_per_step < self.train_env.num_envs:
                 self.log_and_save(stopwatch, stat, saver)
+
+        train_bar.close()
 
 
 def main() -> None:
