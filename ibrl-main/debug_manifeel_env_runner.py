@@ -55,9 +55,11 @@ def main() -> None:
     GlobalHydra.instance().clear()
     with initialize_config_dir(config_dir=config_dir, version_base="1.1"):
         cfg = compose(config_name="train_diffusion_workspace", overrides=overrides)
+        output_dir = str(Path(args.output_dir).resolve())
+        os.makedirs(output_dir, exist_ok=True)
         runner = hydra.utils.instantiate(
             cfg.task.env_runner,
-            output_dir=str(Path(args.output_dir).resolve()),
+            output_dir=output_dir,
         )
 
     env = runner.env
