@@ -148,8 +148,12 @@ class Workspace:
                 f"Use rl_camera={cfg.rl_camera!r} so train and eval both see the same ManiFeel view."
             )
 
+        print("[ibrl] creating train env")
         self.train_env = self._make_env(cfg.num_train_envs, cfg.force_render, seed_offset=0)
+        print("[ibrl] train env ready")
+        print("[ibrl] creating eval runner")
         self.eval_runner = self._make_eval_runner()
+        print("[ibrl] eval runner ready")
 
         self.agent = QAgent(
             False,
@@ -216,7 +220,7 @@ class Workspace:
             f"training.seed={self.cfg.seed}",
             f"n_obs_steps={self.n_obs_steps}",
             "n_action_steps=1",
-            f"task.env_runner.n_test={self.cfg.num_eval_episode}",
+            f"task.env_runner.n_test={self.cfg.num_eval_envs}",
             f"task.env_runner.n_test_vis={self.cfg.num_eval_videos}",
             f"task.env_runner.max_steps={self.cfg.episode_length}",
         ]
@@ -251,14 +255,18 @@ class Workspace:
         self._inflate_obs(batch.next_obs)
 
     def warm_up(self) -> None:
+        print("[ibrl] warmup reset")
         obs = self.train_env.reset()
+        print("[ibrl] warmup reset ok")
         self.replay.reset_current_episodes()
         self.replay.new_episodes(self._pack_replay_obs(obs))
 
         while self.replay.size() < self.cfg.num_warm_up_episode:
             with torch.no_grad(), utils.eval_mode(self.bc_policy):
                 actions = self.bc_policy.act(obs, cpu=False)
+            print("[ibrl] warmup step")
             next_obs, rewards, dones, successes = self.train_env.step(actions)
+            print("[ibrl] warmup step ok")
             self.replay.add_step(
                 self._pack_replay_obs(next_obs),
                 actions,
@@ -347,7 +355,9 @@ class Workspace:
         self.warm_up()
         stopwatch = common_utils.Stopwatch()
 
+        print("[ibrl] train reset")
         obs = self.train_env.reset()
+        print("[ibrl] train reset ok")
         self.replay.reset_current_episodes()
         self.replay.new_episodes(self._pack_replay_obs(obs))
         running_lengths = torch.zeros(self.train_env.num_envs, dtype=torch.long, device=self.train_env.device)
