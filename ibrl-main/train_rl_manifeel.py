@@ -495,26 +495,27 @@ class Workspace:
 
             with stopwatch.time("env step"):
                 next_obs, rewards, dones, successes = self.train_env.step(actions)
+                train_rewards = rewards.index_select(0, self.train_idx)
+                train_dones = dones.index_select(0, self.train_idx)
+                train_successes = successes.index_select(0, self.train_idx)
 
             running_lengths += 1
-            running_rewards += rewards
+            running_rewards += train_rewards
 
             with stopwatch.time("add"):
                 self.replay.add_step(
                     self._pack_replay_obs(train_obs),
                     self._pack_replay_obs(self._slice_obs(next_obs, self.train_idx)),
                     train_actions,
-                    rewards.index_select(0, self.train_idx),
-                    dones.index_select(0, self.train_idx),
-                    successes.index_select(0, self.train_idx),
+                    train_rewards,
+                    train_dones,
+                    train_successes,
                 )
                 self.global_iter += 1
                 self.global_step += self.cfg.num_train_envs
                 train_bar.n = min(self.global_step, self.cfg.num_train_step)
                 train_bar.refresh()
 
-            train_dones = dones.index_select(0, self.train_idx)
-            train_successes = successes.index_select(0, self.train_idx)
             done_ids = train_dones.nonzero(as_tuple=False).squeeze(-1)
             if done_ids.numel() > 0:
                 self.global_episode += int(done_ids.numel())
