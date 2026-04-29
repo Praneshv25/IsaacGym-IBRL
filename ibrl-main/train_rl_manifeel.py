@@ -4,7 +4,7 @@ import sys
 import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import imageio.v2 as imageio
 import isaacgym  # noqa: F401
@@ -282,8 +282,8 @@ class Workspace:
     def _compose_full_action(
         self,
         *,
-        train_actions: torch.Tensor | None = None,
-        eval_actions: torch.Tensor | None = None,
+        train_actions: Optional[torch.Tensor] = None,
+        eval_actions: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         full = torch.zeros(
             (self.total_envs, self.train_env.action_dim),
