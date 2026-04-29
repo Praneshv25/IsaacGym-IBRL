@@ -240,36 +240,24 @@ class Workspace:
         return runner
 
     def _pack_replay_obs(self, obs: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
-        bc_wrist = obs["bc_wrist"].reshape(
-            obs["bc_wrist"].shape[0],
-            obs["bc_wrist"].shape[1] * obs["bc_wrist"].shape[2],
-            obs["bc_wrist"].shape[3],
-            obs["bc_wrist"].shape[4],
-        )
-        bc_state = obs["bc_state"].reshape(
-            obs["bc_state"].shape[0],
-            obs["bc_state"].shape[1] * obs["bc_state"].shape[2],
-        )
         return {
             self.cfg.rl_camera: obs[self.cfg.rl_camera].to(dtype=torch.uint8).contiguous(),
             "prop": obs["prop"].to(dtype=torch.float32).contiguous(),
             "state": obs["state"].to(dtype=torch.float32).contiguous(),
-            "bc_wrist": bc_wrist.to(dtype=torch.uint8).contiguous(),
-            "bc_state": bc_state.to(dtype=torch.float32).contiguous(),
         }
 
     def _inflate_obs(self, obs: Dict[str, torch.Tensor]) -> None:
-        if obs["bc_wrist"].dim() == 4:
+        if "bc_wrist" in obs and obs["bc_wrist"].dim() == 4:
             b, tc, h, w = obs["bc_wrist"].shape
             obs["bc_wrist"] = obs["bc_wrist"].reshape(b, self.n_obs_steps, 3, h, w)
-        if obs["bc_state"].dim() == 2:
+        if "bc_state" in obs and obs["bc_state"].dim() == 2:
             b, ts = obs["bc_state"].shape
             obs["bc_state"] = obs["bc_state"].reshape(b, self.n_obs_steps, self.train_env.prop_shape[0])
-        if self.cfg.rl_camera not in obs:
+        if self.cfg.rl_camera not in obs and "bc_wrist" in obs:
             obs[self.cfg.rl_camera] = obs["bc_wrist"][:, -1].float()
-        if "prop" not in obs:
+        if "prop" not in obs and "bc_state" in obs:
             obs["prop"] = obs["bc_state"][:, -1]
-        if "state" not in obs:
+        if "state" not in obs and "bc_state" in obs:
             obs["state"] = obs["bc_state"][:, -1]
 
     def _inflate_batch(self, batch) -> None:
