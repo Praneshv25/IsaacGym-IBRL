@@ -21,7 +21,6 @@ from bc.diffusion_policy_adapter import DiffusionPolicyAdapter
 from common_utils import ibrl_utils as utils
 from env.manifeel_bulb_wrapper import ManiFeelBulbVecEnv
 from rl.q_agent import QAgent, QAgentConfig
-from rl.vec_replay import VecReplayBuffer
 
 
 def _default_q_agent_cfg() -> QAgentConfig:
@@ -118,6 +117,87 @@ def _dbg(msg: str) -> None:
     print(msg, flush=True)
 
 
+class _GpuBatch:
+    def __init__(self, obs, next_obs, action, reward, bootstrap):
+        self.obs = obs
+        self.next_obs = next_obs
+        self.action = action
+        self.reward = reward
+        self.bootstrap = bootstrap
+
+
+class _GpuReplayBuffer:
+    def __init__(self, capacity: int, gamma: float, device: str):
+        self.capacity = int(capacity)
+        self.gamma = float(gamma)
+        self.device = torch.device(device)
+        self._obs = None
+        self._next_obs = None
+        self._action = None
+        self._reward = None
+        self._bootstrap = None
+        self._ptr = 0
+        self._size = 0
+        self.num_episode = 0
+        self.num_success = 0
+
+    def _ensure_storage(self, obs: Dict[str, torch.Tensor], action: torch.Tensor) -> None:
+        if self._obs is not None:
+            return
+        self._obs = {
+            k: torch.empty((self.capacity, *v.shape[1:]), dtype=v.dtype, device=self.device)
+            for k, v in obs.items()
+        }
+        self._next_obs = {
+            k: torch.empty((self.capacity, *v.shape[1:]), dtype=v.dtype, device=self.device)
+            for k, v in obs.items()
+        }
+        self._action = torch.empty((self.capacity, *action.shape[1:]), dtype=action.dtype, device=self.device)
+        self._reward = torch.empty(self.capacity, dtype=torch.float32, device=self.device)
+        self._bootstrap = torch.empty(self.capacity, dtype=torch.float32, device=self.device)
+
+    def add_step(
+        self,
+        obs: Dict[str, torch.Tensor],
+        next_obs: Dict[str, torch.Tensor],
+        actions: torch.Tensor,
+        rewards: torch.Tensor,
+        dones: torch.Tensor,
+        successes: torch.Tensor,
+    ) -> None:
+        self._ensure_storage(obs, actions)
+        n = actions.shape[0]
+        assert self._obs is not None and self._next_obs is not None
+        assert self._action is not None and self._reward is not None and self._bootstrap is not None
+        idx = (torch.arange(n, device=self.device) + self._ptr) % self.capacity
+        for k in self._obs:
+            self._obs[k][idx] = obs[k].detach().clone()
+            self._next_obs[k][idx] = next_obs[k].detach().clone()
+        self._action[idx] = actions.detach().clone()
+        self._reward[idx] = rewards.detach().float()
+        self._bootstrap[idx] = (~dones).detach().float() * self.gamma
+        self._ptr = int((self._ptr + n) % self.capacity)
+        self._size = min(self.capacity, self._size + n)
+        self.num_episode += int(dones.sum().item())
+        self.num_success += int((dones & successes).sum().item())
+
+    def sample(self, batchsize: int, device: str):
+        assert self._size > 0
+        sample_device = torch.device(device)
+        idx = torch.randint(0, self._size, (batchsize,), device=self.device)
+        assert self._obs is not None and self._next_obs is not None
+        assert self._action is not None and self._reward is not None and self._bootstrap is not None
+        obs = {k: v[idx].to(sample_device) for k, v in self._obs.items()}
+        next_obs = {k: v[idx].to(sample_device) for k, v in self._next_obs.items()}
+        action = {"action": self._action[idx].to(sample_device)}
+        reward = self._reward[idx].to(sample_device)
+        bootstrap = self._bootstrap[idx].to(sample_device)
+        return _GpuBatch(obs, next_obs, action, reward, bootstrap)
+
+    def size(self) -> int:
+        return self._size
+
+
 class Workspace:
     def __init__(self, cfg: MainConfig):
         self.cfg = cfg
@@ -179,12 +259,10 @@ class Workspace:
             rl_camera=cfg.rl_camera,
         )
 
-        self.replay = VecReplayBuffer(
-            num_envs=self.train_env.num_envs,
-            nstep=cfg.nstep,
+        self.replay = _GpuReplayBuffer(
+            capacity=cfg.replay_buffer_size * self.train_env.num_envs * max(cfg.episode_length, 1),
             gamma=cfg.discount,
-            max_episode_length=cfg.episode_length,
-            replay_size=cfg.replay_buffer_size,
+            device=cfg.rl_device,
         )
 
     def _make_env(self, num_envs: int, force_render: int, seed_offset: int) -> ManiFeelBulbVecEnv:
@@ -240,20 +318,28 @@ class Workspace:
         return runner
 
     def _pack_replay_obs(self, obs: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        wrist = obs[self.cfg.rl_camera]
         prop = obs["prop"]
         state = obs["state"]
         print(
             "[ibrl] pack input "
+            f"{self.cfg.rl_camera}:shape={tuple(wrist.shape)} dtype={wrist.dtype} device={wrist.device}; "
             f"prop:shape={tuple(prop.shape)} dtype={prop.dtype} device={prop.device}; "
             f"state:shape={tuple(state.shape)} dtype={state.dtype} device={state.device}",
             flush=True,
         )
-        prop_out = prop.detach().cpu().clone().to(dtype=torch.float32).contiguous()
+        wrist_out = wrist.detach().clone().to(dtype=torch.float32).contiguous()
+        print(
+            f"[ibrl] pack {self.cfg.rl_camera} ok shape={tuple(wrist_out.shape)} dtype={wrist_out.dtype}",
+            flush=True,
+        )
+        prop_out = prop.detach().clone().to(dtype=torch.float32).contiguous()
         print(f"[ibrl] pack prop ok shape={tuple(prop_out.shape)} dtype={prop_out.dtype}", flush=True)
-        state_out = state.detach().cpu().clone().to(dtype=torch.float32).contiguous()
+        state_out = state.detach().clone().to(dtype=torch.float32).contiguous()
         print(f"[ibrl] pack state ok shape={tuple(state_out.shape)} dtype={state_out.dtype}", flush=True)
 
         return {
+            self.cfg.rl_camera: wrist_out,
             "prop": prop_out,
             "state": state_out,
         }
@@ -280,19 +366,8 @@ class Workspace:
         _dbg("[ibrl] warmup reset")
         obs = self.train_env.reset()
         _dbg("[ibrl] warmup reset ok")
-        _dbg("[ibrl] warmup new_episodes")
-        packed_obs = self._pack_replay_obs(obs)
-        for i in range(self.replay.num_envs):
-            env_obs = {k: v[i].contiguous() for k, v in packed_obs.items()}
-            print(f"[ibrl] manual replay env {i} before init", flush=True)
-            self.replay.episodes[i].init({})
-            print(f"[ibrl] manual replay env {i} after init", flush=True)
-            self.replay.episodes[i].push_obs(env_obs)
-            print(f"[ibrl] manual replay env {i} after push_obs", flush=True)
-            self.replay._initialized[i] = True
-        _dbg("[ibrl] warmup new_episodes ok")
 
-        while self.replay.size() < self.cfg.num_warm_up_episode:
+        while self.replay.num_episode < self.cfg.num_warm_up_episode:
             _dbg("[ibrl] warmup bc act")
             with torch.no_grad(), utils.eval_mode(self.bc_policy):
                 actions = self.bc_policy.act(obs, cpu=False)
@@ -307,6 +382,7 @@ class Workspace:
             )
             _dbg("[ibrl] warmup add_step")
             self.replay.add_step(
+                self._pack_replay_obs(obs),
                 self._pack_replay_obs(next_obs),
                 actions,
                 rewards,
@@ -437,6 +513,7 @@ class Workspace:
             with stopwatch.time("add"):
                 _dbg("[ibrl] train add_step")
                 self.replay.add_step(
+                    self._pack_replay_obs(obs),
                     self._pack_replay_obs(next_obs),
                     actions,
                     rewards,
