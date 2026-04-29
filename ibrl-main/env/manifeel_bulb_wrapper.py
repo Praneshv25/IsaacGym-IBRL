@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import os
 import sys
-from typing import Dict, Tuple
+from typing import Dict, Optional, Tuple
 
 try:
     import isaacgym  # noqa: F401
@@ -23,7 +23,7 @@ def _ensure_import_path(path: str) -> None:
 
 
 class ManiFeelBulbVecEnv:
-    """Thin adapter around ManiFeel's env_runner-owned rollout env."""
+    """Direct TacSL bulb wrapper for dense-reward RL training."""
 
     observation_shape: Tuple[int, ...]
     prop_shape: Tuple[int, ...]
@@ -72,75 +72,145 @@ class ManiFeelBulbVecEnv:
             OmegaConf.register_new_resolver("eval", eval)
 
         if self.image_hw != (256, 256):
-            raise ValueError(f"ManiFeel restart path expects 256x256 observations, got {self.image_hw}.")
-        if self.isaac_camera != self.rl_camera:
-            raise ValueError(
-                f"isaac_camera={self.isaac_camera!r} must match rl_camera={self.rl_camera!r} "
-                "in the ManiFeel-owned rollout path."
-            )
+            raise ValueError(f"Direct train wrapper expects 256x256 observations, got {self.image_hw}.")
 
         config_dir = os.path.join(self.manifeel_root, "manifeel", "config")
-        overrides = [
-            "task=vision_wrist",
-            "isaacgym_cfg_name=isaacgym_config_bulb.yaml",
-            f"training.seed={self._seed}",
-            f"n_obs_steps={self.n_obs_steps}",
-            "n_action_steps=1",
-            f"task.env_runner.n_test={self.num_envs}",
-            "task.env_runner.n_test_vis=1",
-            f"task.env_runner.max_steps={self.max_episode_length}",
-        ]
-        output_dir = os.path.join(self.manifeel_root, "data", "outputs", "ibrl_train_env")
-        os.makedirs(output_dir, exist_ok=True)
-
         GlobalHydra.instance().clear()
         with initialize_config_dir(config_dir=config_dir, version_base="1.1"):
-            cfg = compose(config_name="train_diffusion_workspace", overrides=overrides)
-            cfg.training.device = rl_device
-            cfg.task.env_runner.test_start_seed = self._seed
-            runner = hydra.utils.instantiate(
-                cfg.task.env_runner,
-                output_dir=output_dir,
-            )
+            cfg = compose(config_name="isaacgym_config_bulb")
 
-        self._runner = runner
-        self._env = runner.env
-        self._task_env = runner.env.env.env.envs
+        cfg.num_envs = self.num_envs
+        cfg.sim_device = sim_device
+        cfg.rl_device = rl_device
+        cfg.graphics_device_id = int(graphics_device_id)
+        cfg.headless = bool(headless)
+        cfg.capture_video = False
+        cfg.force_render = bool(force_render)
+        cfg.task.rl.max_episode_length = self.max_episode_length
+
+        from isaacgymenvs.tasks.tacsl.tacsl_task_bulb import TacSLTaskBulb
+        from isaacgymenvs.utils.reformat import omegaconf_to_dict
+        from isaacgymenvs.utils.utils import set_seed
+
+        self._set_seed = set_seed
+        self._cfg = cfg
+        cfg_dict = omegaconf_to_dict(cfg.task)
+        self.envs = TacSLTaskBulb(
+            cfg=cfg_dict,
+            rl_device=cfg.rl_device,
+            sim_device=cfg.sim_device,
+            graphics_device_id=cfg.graphics_device_id,
+            headless=cfg.headless,
+            virtual_screen_capture=cfg.capture_video,
+            force_render=cfg.force_render,
+        )
+
         self._episode_reward = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
         self._episode_step = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
         self._last_done_steps = torch.zeros(0, dtype=torch.long, device=self.device)
         self._last_done_rewards = torch.zeros(0, dtype=torch.float32, device=self.device)
         self._last_done_successes = torch.zeros(0, dtype=torch.bool, device=self.device)
+        self._bc_wrist_hist: Optional[torch.Tensor] = None
+        self._bc_state_hist: Optional[torch.Tensor] = None
+        self.seed(self._seed)
 
-    def _format_obs(self, obs_np: Dict[str, np.ndarray]) -> Dict[str, "torch.Tensor"]:
+    def seed(self, seed: Optional[int] = None) -> None:
+        if seed is None:
+            seed = np.random.randint(0, 25536)
+        self._seed = self._set_seed(
+            seed,
+            torch_deterministic=self._cfg.torch_deterministic,
+            rank=0,
+        )
+
+    def _extract_current_obs(self, obs: Dict[str, "torch.Tensor"]) -> Tuple["torch.Tensor", "torch.Tensor"]:
         global torch
-        bc_wrist = torch.from_numpy(obs_np[self.isaac_camera]).to(self.device).float()
-        if float(bc_wrist.max()) <= 1.01:
-            bc_wrist = bc_wrist * 255.0
-        bc_state = torch.from_numpy(obs_np["state"]).to(self.device).float()
+
+        wrist = obs[self.isaac_camera].detach().to(self.device).float()
+        if wrist.dim() == 4 and wrist.shape[-1] == 3:
+            wrist = wrist.permute(0, 3, 1, 2).contiguous()
+        if float(wrist.max()) <= 1.01:
+            wrist = wrist * 255.0
+
+        ee_pos = obs["ee_pos"].detach().to(self.device).float()
+        ee_quat = obs["ee_quat"].detach().to(self.device).float()
+        state = torch.cat([ee_pos, ee_quat], dim=1)
+        return wrist, state
+
+    def _set_history(self, wrist: "torch.Tensor", state: "torch.Tensor", env_ids: Optional["torch.Tensor"] = None) -> None:
+        wrist_hist = wrist.unsqueeze(1).repeat(1, self.n_obs_steps, 1, 1, 1).contiguous()
+        state_hist = state.unsqueeze(1).repeat(1, self.n_obs_steps, 1).contiguous()
+        if self._bc_wrist_hist is None or self._bc_state_hist is None or env_ids is None:
+            self._bc_wrist_hist = wrist_hist
+            self._bc_state_hist = state_hist
+            return
+        self._bc_wrist_hist[env_ids] = wrist_hist[env_ids]
+        self._bc_state_hist[env_ids] = state_hist[env_ids]
+
+    def _append_history(self, wrist: "torch.Tensor", state: "torch.Tensor", done_ids: "torch.Tensor") -> None:
+        assert self._bc_wrist_hist is not None
+        assert self._bc_state_hist is not None
+
+        active_mask = torch.ones(self.num_envs, dtype=torch.bool, device=self.device)
+        active_mask[done_ids] = False
+        if active_mask.any():
+            self._bc_wrist_hist[active_mask, :-1] = self._bc_wrist_hist[active_mask, 1:].clone()
+            self._bc_wrist_hist[active_mask, -1] = wrist[active_mask]
+            self._bc_state_hist[active_mask, :-1] = self._bc_state_hist[active_mask, 1:].clone()
+            self._bc_state_hist[active_mask, -1] = state[active_mask]
+
+        if done_ids.numel() > 0:
+            self._set_history(wrist, state, done_ids)
+
+    def _format_obs(self, obs: Dict[str, "torch.Tensor"]) -> Dict[str, "torch.Tensor"]:
+        wrist, state = self._extract_current_obs(obs)
+        assert self._bc_wrist_hist is not None
+        assert self._bc_state_hist is not None
         return {
-            self.rl_camera: bc_wrist[:, -1],
-            "prop": bc_state[:, -1],
-            "state": bc_state[:, -1],
-            "bc_wrist": bc_wrist,
-            "bc_state": bc_state,
+            self.rl_camera: wrist,
+            "prop": state,
+            "state": state,
+            "bc_wrist": self._bc_wrist_hist,
+            "bc_state": self._bc_state_hist,
         }
+
+    def _raw_reset(self) -> Dict[str, "torch.Tensor"]:
+        import torch
+
+        env_ids = torch.arange(self.num_envs, device=self.device)
+        self.envs.reset_idx(env_ids)
+        self.envs.compute_observations()
+        reset_out = self.envs.reset()
+        return reset_out["obs"]
+
+    def _reset_done_envs(self, done_ids: "torch.Tensor") -> Dict[str, "torch.Tensor"]:
+        self.envs.reset_idx(done_ids)
+        self.envs.compute_observations()
+        return self.envs.obs_dict
 
     def reset(self) -> Dict[str, "torch.Tensor"]:
         self._episode_reward.zero_()
         self._episode_step.zero_()
-        obs_np = self._env.reset()
-        return self._format_obs(obs_np)
+        obs = self._raw_reset()
+        wrist, state = self._extract_current_obs(obs)
+        self._set_history(wrist, state)
+        return self._format_obs(obs)
 
     def step(self, actions: "torch.Tensor"):
         global torch
 
-        actions_np = actions.detach().to("cpu", dtype=torch.float32).numpy()[:, None, :]
-        obs_np, _, dones_np, _ = self._env.step(actions_np)
+        if isinstance(actions, torch.Tensor):
+            action_tensor = actions.to(dtype=torch.float32, device=self.device)
+        else:
+            action_tensor = torch.from_numpy(actions).to(dtype=torch.float32, device=self.device)
+        if action_tensor.dim() == 1:
+            action_tensor = action_tensor.unsqueeze(0)
 
-        rewards = self._task_env.rew_buf.detach().clone().to(self.device).float() * self.env_reward_scale
-        dones = torch.from_numpy(dones_np).to(device=self.device, dtype=torch.bool)
-        successes = self._task_env._check_success().bool().to(self.device)
+        obs_out, reward, reset, info = self.envs.step(action_tensor)
+        obs = obs_out["obs"]
+        rewards = reward.detach().clone().to(self.device).float() * self.env_reward_scale
+        dones = reset.detach().clone().to(self.device).bool()
+        successes = self.envs._check_success().detach().clone().to(self.device).bool()
 
         self._episode_reward += rewards
         self._episode_step += 1
@@ -150,21 +220,28 @@ class ManiFeelBulbVecEnv:
             self._last_done_steps = self._episode_step[done_ids].clone()
             self._last_done_rewards = self._episode_reward[done_ids].clone()
             self._last_done_successes = successes[done_ids].clone()
-            self._episode_reward[done_ids] = 0.0
-            self._episode_step[done_ids] = 0
+            reset_obs = self._reset_done_envs(done_ids)
+            for key in obs.keys():
+                obs[key][done_ids] = reset_obs[key][done_ids]
         else:
             self._last_done_steps = torch.zeros(0, dtype=torch.long, device=self.device)
             self._last_done_rewards = torch.zeros(0, dtype=torch.float32, device=self.device)
             self._last_done_successes = torch.zeros(0, dtype=torch.bool, device=self.device)
 
-        return self._format_obs(obs_np), rewards, dones, successes
+        wrist, state = self._extract_current_obs(obs)
+        self._append_history(wrist, state, done_ids)
+
+        if done_ids.numel() > 0:
+            self._episode_reward[done_ids] = 0.0
+            self._episode_step[done_ids] = 0
+
+        return self._format_obs(obs), rewards, dones, successes
 
     def render(self):
-        return self._env.render()
+        return None
 
     def close(self) -> None:
-        if hasattr(self._env, "close"):
-            self._env.close()
+        return
 
     @property
     def last_done_steps(self):
