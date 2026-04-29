@@ -376,6 +376,13 @@ class Workspace:
         episode_count = 0
         frames: List[np.ndarray] = []
         max_eval_episodes = max(self.cfg.num_eval_episode, self.cfg.num_eval_envs)
+        eval_bar = tqdm(
+            total=max_eval_episodes,
+            desc="Eval",
+            leave=False,
+            mininterval=0.2,
+            bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]",
+        )
         with torch.no_grad(), utils.eval_mode(self.agent):
             while episode_count < max_eval_episodes:
                 eval_obs = self._slice_obs(obs, self.eval_idx)
@@ -387,9 +394,18 @@ class Workspace:
                 eval_dones = dones.index_select(0, self.eval_idx)
                 eval_successes = successes.index_select(0, self.eval_idx)
                 if eval_dones.any():
-                    episode_count += int(eval_dones.sum().item())
-                    success_count += int((eval_dones & eval_successes).sum().item())
+                    done_count = int(eval_dones.sum().item())
+                    success_batch = int((eval_dones & eval_successes).sum().item())
+                    episode_count += done_count
+                    success_count += success_batch
+                    eval_bar.update(done_count)
+                    eval_bar.set_postfix(
+                        success=success_count,
+                        episodes=episode_count,
+                        refresh=False,
+                    )
                 obs = next_obs
+        eval_bar.close()
 
         videos = []
         if self.cfg.num_eval_videos > 0 and frames:
@@ -550,7 +566,7 @@ class Workspace:
                     self.rl_train(stat)
                     self.train_step += 1
 
-            if self.global_step % self.cfg.log_per_step < self.train_env.num_envs:
+            if self.global_step > 0 and self.global_step % self.cfg.log_per_step == 0:
                 obs, running_lengths, running_rewards = self.log_and_save(stopwatch, stat, saver)
 
         train_bar.close()
