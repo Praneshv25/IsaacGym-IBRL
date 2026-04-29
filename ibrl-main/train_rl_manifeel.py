@@ -341,6 +341,8 @@ class Workspace:
             total=max(self.cfg.num_warm_up_episode * self.cfg.episode_length, 1),
             desc="Warmup",
             leave=False,
+            mininterval=0.2,
+            bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]",
         )
 
         while self.replay.num_episode < self.cfg.num_warm_up_episode:
@@ -483,6 +485,8 @@ class Workspace:
             total=self.cfg.num_train_step,
             desc="Train",
             initial=min(self.global_step, self.cfg.num_train_step),
+            mininterval=0.2,
+            bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}<{remaining}, {rate_fmt}{postfix}]",
         )
 
         while self.global_step < self.cfg.num_train_step:
@@ -514,6 +518,11 @@ class Workspace:
                 self.global_iter += 1
                 self.global_step += self.cfg.num_train_envs
                 train_bar.n = min(self.global_step, self.cfg.num_train_step)
+                train_bar.set_postfix(
+                    episodes=self.global_episode,
+                    replay=self.replay.size(),
+                    refresh=False,
+                )
                 train_bar.refresh()
 
             done_ids = train_dones.nonzero(as_tuple=False).squeeze(-1)
