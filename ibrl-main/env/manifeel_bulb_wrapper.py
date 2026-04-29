@@ -71,9 +71,6 @@ class ManiFeelBulbVecEnv:
         if not OmegaConf.has_resolver("eval"):
             OmegaConf.register_new_resolver("eval", eval)
 
-        if self.image_hw != (256, 256):
-            raise ValueError(f"Direct train wrapper expects 256x256 observations, got {self.image_hw}.")
-
         config_dir = os.path.join(self.manifeel_root, "manifeel", "config")
         from isaacgymenvs.tasks.tacsl.tacsl_task_bulb import TacSLTaskBulb
         from isaacgymenvs.utils.reformat import omegaconf_to_dict
@@ -92,6 +89,15 @@ class ManiFeelBulbVecEnv:
             cfg.capture_video = False
             cfg.force_render = bool(force_render)
             cfg.task.rl.max_episode_length = self.max_episode_length
+            cfg.light_factor = getattr(cfg, "light_factor", 1.0)
+
+            if self.isaac_camera in cfg.task.env.obsDims:
+                cfg.task.env.obsDims[self.isaac_camera] = [self.image_hw[0], self.image_hw[1], 3]
+            if "client" in cfg.task.env.obsDims:
+                cfg.task.env.obsDims["client"] = [self.image_hw[0], self.image_hw[1], 3]
+            for camera_cfg in cfg.task.env.camera_configs:
+                if camera_cfg.name in {self.isaac_camera, "client"}:
+                    camera_cfg.image_size = [self.image_hw[0], self.image_hw[1]]
 
             self._cfg = cfg
             cfg_dict = omegaconf_to_dict(cfg.task)
