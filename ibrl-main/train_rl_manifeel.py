@@ -1,11 +1,12 @@
 import copy
-import gc
 import os
 import sys
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Tuple
 
+import imageio.v2 as imageio
 import isaacgym  # noqa: F401
 import numpy as np
 import pyrallis
@@ -231,7 +232,10 @@ class Workspace:
                 f"Use rl_camera={cfg.rl_camera!r} so train and eval both see the same ManiFeel view."
             )
 
-        self.train_env = self._make_env(cfg.num_train_envs, cfg.force_render, seed_offset=0)
+        self.total_envs = cfg.num_train_envs + cfg.num_eval_envs
+        self.train_env = self._make_env(self.total_envs, cfg.force_render, seed_offset=0)
+        self.train_idx = torch.arange(cfg.num_train_envs, device=self.train_env.device)
+        self.eval_idx = torch.arange(cfg.num_train_envs, self.total_envs, device=self.train_env.device)
         self.agent = QAgent(
             False,
             self.train_env.observation_shape,
@@ -246,12 +250,6 @@ class Workspace:
         if cfg.add_bc_loss:
             self.ref_agent = copy.deepcopy(self.agent)
             self.ref_agent.cfg.act_method = "rl"
-
-        self.eval_policy = _QAgentEvalPolicy(
-            agent=self.agent,
-            device=cfg.rl_device,
-            rl_camera=cfg.rl_camera,
-        )
 
         self.replay = _GpuReplayBuffer(
             capacity=cfg.gpu_replay_capacity,
@@ -278,38 +276,32 @@ class Workspace:
             force_render=bool(force_render),
         )
 
-    def _make_eval_runner(self):
-        abs_root = os.path.abspath(self.cfg.manifeel_root)
-        if abs_root not in sys.path:
-            sys.path.insert(0, abs_root)
+    def _slice_obs(self, obs: Dict[str, torch.Tensor], env_idx: torch.Tensor) -> Dict[str, torch.Tensor]:
+        return {k: v.index_select(0, env_idx) for k, v in obs.items()}
 
-        if not OmegaConf.has_resolver("eval"):
-            OmegaConf.register_new_resolver("eval", eval)
+    def _compose_full_action(
+        self,
+        *,
+        train_actions: torch.Tensor | None = None,
+        eval_actions: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        full = torch.zeros(
+            (self.total_envs, self.train_env.action_dim),
+            dtype=torch.float32,
+            device=self.train_env.device,
+        )
+        if train_actions is not None:
+            full[self.train_idx] = train_actions
+        if eval_actions is not None and self.eval_idx.numel() > 0:
+            full[self.eval_idx] = eval_actions
+        return full
 
-        config_dir = os.path.join(abs_root, "manifeel", "config")
-        output_dir = str(Path(self.work_dir).joinpath("eval_runner"))
-        os.makedirs(output_dir, exist_ok=True)
-        overrides = [
-            "task=vision_wrist",
-            "isaacgym_cfg_name=isaacgym_config_bulb.yaml",
-            f"training.seed={self.cfg.seed}",
-            f"n_obs_steps={self.n_obs_steps}",
-            "n_action_steps=1",
-            f"task.env_runner.n_test={self.cfg.num_eval_envs}",
-            f"task.env_runner.n_test_vis={self.cfg.num_eval_videos}",
-            f"task.env_runner.max_steps={self.cfg.episode_length}",
-        ]
-
-        GlobalHydra.instance().clear()
-        with initialize_config_dir(config_dir=config_dir, version_base="1.1"):
-            cfg = hydra.compose(config_name="train_diffusion_workspace", overrides=overrides)
-            cfg.training.device = self.cfg.rl_device
-            cfg.task.env_runner.test_start_seed = self.cfg.seed + 100000
-            runner = hydra.utils.instantiate(
-                cfg.task.env_runner,
-                output_dir=output_dir,
-            )
-        return runner
+    def _obs_to_video_frame(self, obs: Dict[str, torch.Tensor], env_idx: int) -> np.ndarray:
+        frame = obs[self.cfg.rl_camera][env_idx].detach().float()
+        if float(frame.max()) <= 1.01:
+            frame = frame * 255.0
+        frame = frame.clamp(0, 255).to(torch.uint8).permute(1, 2, 0).cpu().numpy()
+        return frame
 
     def _pack_replay_obs(self, obs: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         wrist = obs[self.cfg.rl_camera]
@@ -352,19 +344,21 @@ class Workspace:
         )
 
         while self.replay.num_episode < self.cfg.num_warm_up_episode:
+            train_obs = self._slice_obs(obs, self.train_idx)
             with torch.no_grad(), utils.eval_mode(self.bc_policy):
-                actions = self.bc_policy.act(obs, cpu=False)
-            next_obs, rewards, dones, successes = self.train_env.step(actions)
+                train_actions = self.bc_policy.act(train_obs, cpu=False)
+            full_actions = self._compose_full_action(train_actions=train_actions)
+            next_obs, rewards, dones, successes = self.train_env.step(full_actions)
             self.replay.add_step(
-                self._pack_replay_obs(obs),
-                self._pack_replay_obs(next_obs),
-                actions,
-                rewards,
-                dones,
-                successes,
+                self._pack_replay_obs(train_obs),
+                self._pack_replay_obs(self._slice_obs(next_obs, self.train_idx)),
+                train_actions,
+                rewards.index_select(0, self.train_idx),
+                dones.index_select(0, self.train_idx),
+                successes.index_select(0, self.train_idx),
             )
             obs = next_obs
-            warmup_bar.update(self.train_env.num_envs)
+            warmup_bar.update(self.cfg.num_train_envs)
             warmup_bar.set_postfix(episodes=f"{self.replay.num_episode}/{self.cfg.num_warm_up_episode}")
 
         warmup_bar.close()
@@ -372,25 +366,44 @@ class Workspace:
         return obs
 
     def eval(self) -> Dict[str, object]:
-        runner = self._make_eval_runner()
-        try:
-            with torch.no_grad(), utils.eval_mode(self.agent):
-                self.eval_policy.reset()
-                log_data = runner.run(self.eval_policy)
-        finally:
-            try:
-                runner.env.close()
-            except Exception:
-                pass
-            del runner
-            gc.collect()
-            if torch.cuda.is_available():
-                torch.cuda.empty_cache()
+        if self.eval_idx.numel() == 0:
+            return {"mean_score": 0.0, "videos": [], "obs": self.train_env.reset()}
 
-        videos = [value for key, value in log_data.items() if key.startswith("test/sim_video_")]
+        obs = self.train_env.reset()
+        success_count = 0
+        episode_count = 0
+        frames: List[np.ndarray] = []
+        max_eval_episodes = max(self.cfg.num_eval_episode, self.cfg.num_eval_envs)
+        with torch.no_grad(), utils.eval_mode(self.agent):
+            while episode_count < max_eval_episodes:
+                eval_obs = self._slice_obs(obs, self.eval_idx)
+                eval_actions = self.agent.act(eval_obs, eval_mode=True, stddev=0.0, cpu=False)
+                full_actions = self._compose_full_action(eval_actions=eval_actions)
+                next_obs, _, dones, successes = self.train_env.step(full_actions)
+                if self.cfg.num_eval_videos > 0 and len(frames) < self.cfg.episode_length:
+                    frames.append(self._obs_to_video_frame(next_obs, int(self.eval_idx[0].item())))
+                eval_dones = dones.index_select(0, self.eval_idx)
+                eval_successes = successes.index_select(0, self.eval_idx)
+                if eval_dones.any():
+                    episode_count += int(eval_dones.sum().item())
+                    success_count += int((eval_dones & eval_successes).sum().item())
+                obs = next_obs
+
+        videos = []
+        if self.cfg.num_eval_videos > 0 and frames:
+            video_dir = Path(self.work_dir).joinpath("eval_videos")
+            video_dir.mkdir(parents=True, exist_ok=True)
+            with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False, dir=video_dir) as tmp:
+                video_path = tmp.name
+            imageio.mimsave(video_path, frames, fps=self.cfg.video_fps)
+            videos.append(wandb.Video(video_path, fps=self.cfg.video_fps, format="mp4"))
+
+        mean_score = success_count / max(episode_count, 1)
+        obs = self.train_env.reset()
         return {
-            "mean_score": float(log_data.get("test/mean_score", 0.0)),
+            "mean_score": float(mean_score),
             "videos": videos,
+            "obs": obs,
         }
 
     def rl_train(self, stat: common_utils.MultiCounter) -> None:
@@ -415,7 +428,7 @@ class Workspace:
         stopwatch: common_utils.Stopwatch,
         stat: common_utils.MultiCounter,
         saver: common_utils.TopkSaver,
-    ) -> tuple[Dict[str, torch.Tensor], torch.Tensor, torch.Tensor]:
+    ) -> Tuple[Dict[str, torch.Tensor], torch.Tensor, torch.Tensor]:
         elapsed_time = stopwatch.elapsed_time_since_reset
         stat["other/speed"].append(self.cfg.log_per_step / max(elapsed_time, 1e-6))
         stat["other/elapsed_time"].append(elapsed_time)
@@ -426,15 +439,6 @@ class Workspace:
         stat["score/num_success"].append(self.replay.num_success)
 
         saver.save(self.agent.state_dict(), None, save_latest=True)
-
-        try:
-            self.train_env.close()
-        except Exception:
-            pass
-        self.train_env = None
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
 
         with stopwatch.time("eval"):
             eval_metrics = self.eval()
@@ -454,10 +458,9 @@ class Workspace:
         stopwatch.summary(reset=True)
         print("total time:", common_utils.sec2str(stopwatch.total_time))
         print(common_utils.get_mem_usage())
-        self.train_env = self._make_env(self.cfg.num_train_envs, self.cfg.force_render, seed_offset=0)
-        obs = self.train_env.reset()
-        running_lengths = torch.zeros(self.train_env.num_envs, dtype=torch.long, device=self.train_env.device)
-        running_rewards = torch.zeros(self.train_env.num_envs, dtype=torch.float32, device=self.train_env.device)
+        obs = eval_metrics["obs"]
+        running_lengths = torch.zeros(self.cfg.num_train_envs, dtype=torch.long, device=self.train_env.device)
+        running_rewards = torch.zeros(self.cfg.num_train_envs, dtype=torch.float32, device=self.train_env.device)
         return obs, running_lengths, running_rewards
 
     def train(self) -> None:
@@ -474,8 +477,8 @@ class Workspace:
 
         obs = self.warm_up()
         stopwatch = common_utils.Stopwatch()
-        running_lengths = torch.zeros(self.train_env.num_envs, dtype=torch.long, device=self.train_env.device)
-        running_rewards = torch.zeros(self.train_env.num_envs, dtype=torch.float32, device=self.train_env.device)
+        running_lengths = torch.zeros(self.cfg.num_train_envs, dtype=torch.long, device=self.train_env.device)
+        running_rewards = torch.zeros(self.cfg.num_train_envs, dtype=torch.float32, device=self.train_env.device)
         train_bar = tqdm(
             total=self.cfg.num_train_step,
             desc="Train",
@@ -485,7 +488,9 @@ class Workspace:
         while self.global_step < self.cfg.num_train_step:
             with stopwatch.time("act"), torch.no_grad(), utils.eval_mode(self.agent):
                 stddev = utils.schedule(self.cfg.stddev_schedule, self.global_step)
-                actions = self.agent.act(obs, eval_mode=False, stddev=stddev, cpu=False)
+                train_obs = self._slice_obs(obs, self.train_idx)
+                train_actions = self.agent.act(train_obs, eval_mode=False, stddev=stddev, cpu=False)
+                actions = self._compose_full_action(train_actions=train_actions)
                 stat["data/stddev"].append(stddev)
 
             with stopwatch.time("env step"):
@@ -496,23 +501,25 @@ class Workspace:
 
             with stopwatch.time("add"):
                 self.replay.add_step(
-                    self._pack_replay_obs(obs),
-                    self._pack_replay_obs(next_obs),
-                    actions,
-                    rewards,
-                    dones,
-                    successes,
+                    self._pack_replay_obs(train_obs),
+                    self._pack_replay_obs(self._slice_obs(next_obs, self.train_idx)),
+                    train_actions,
+                    rewards.index_select(0, self.train_idx),
+                    dones.index_select(0, self.train_idx),
+                    successes.index_select(0, self.train_idx),
                 )
                 self.global_iter += 1
-                self.global_step += self.train_env.num_envs
+                self.global_step += self.cfg.num_train_envs
                 train_bar.n = min(self.global_step, self.cfg.num_train_step)
                 train_bar.refresh()
 
-            done_ids = dones.nonzero(as_tuple=False).squeeze(-1)
+            train_dones = dones.index_select(0, self.train_idx)
+            train_successes = successes.index_select(0, self.train_idx)
+            done_ids = train_dones.nonzero(as_tuple=False).squeeze(-1)
             if done_ids.numel() > 0:
                 self.global_episode += int(done_ids.numel())
                 stat["score/train_score"].append(
-                    float(successes[done_ids].float().sum().item()),
+                    float(train_successes[done_ids].float().sum().item()),
                     int(done_ids.numel()),
                 )
                 stat["data/episode_len"].append(
