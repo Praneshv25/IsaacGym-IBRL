@@ -291,7 +291,15 @@ class Workspace:
         _dbg("[ibrl] warmup reset ok")
         self.replay.reset_current_episodes()
         _dbg("[ibrl] warmup new_episodes")
-        self.replay.new_episodes(self._pack_replay_obs(obs))
+        packed_obs = self._pack_replay_obs(obs)
+        for i in range(self.replay.num_envs):
+            env_obs = {k: v[i].contiguous() for k, v in packed_obs.items()}
+            print(f"[ibrl] manual replay env {i} before init", flush=True)
+            self.replay.episodes[i].init({})
+            print(f"[ibrl] manual replay env {i} after init", flush=True)
+            self.replay.episodes[i].push_obs(env_obs)
+            print(f"[ibrl] manual replay env {i} after push_obs", flush=True)
+            self.replay._initialized[i] = True
         _dbg("[ibrl] warmup new_episodes ok")
 
         while self.replay.size() < self.cfg.num_warm_up_episode:
