@@ -11,6 +11,7 @@ except ImportError:
 
 import hydra
 import numpy as np
+import torch.nn.functional as F
 from hydra import compose, initialize_config_dir
 from hydra.core.global_hydra import GlobalHydra
 from omegaconf import OmegaConf
@@ -144,6 +145,15 @@ class ManiFeelBulbVecEnv:
             self._dbg("[env] extract after wrist permute")
         wrist = wrist.detach().to(self.device).float()
         self._dbg("[env] extract after wrist to-float")
+        if tuple(wrist.shape[-2:]) != self.image_hw:
+            self._dbg(f"[env] extract before wrist resize from {tuple(wrist.shape[-2:])} to {self.image_hw}")
+            wrist = F.interpolate(
+                wrist,
+                size=self.image_hw,
+                mode="bilinear",
+                align_corners=False,
+            )
+            self._dbg("[env] extract after wrist resize")
         if float(wrist.max()) <= 1.01:
             wrist = wrist * 255.0
         self._dbg("[env] extract after wrist scale")
