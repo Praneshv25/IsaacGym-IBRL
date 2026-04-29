@@ -8,6 +8,7 @@ dp_checkpoint: "/Users/PV/Desktop/CS 441/IsaacGym-IBRL/Diffusion Checkpoint Epoc
 num_train_envs: 1
 num_eval_envs: 1
 num_eval_episode: 1
+eval_max_steps: 1
 num_eval_videos: 1
 episode_length: 800
 image_size: 96

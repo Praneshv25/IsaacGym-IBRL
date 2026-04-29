@@ -46,6 +46,7 @@ class MainConfig(common_utils.RunConfig):
     num_train_envs: int = 8
     num_eval_envs: int = 4
     num_eval_episode: int = 20
+    eval_max_steps: int = 0
     num_eval_videos: int = 2
     episode_length: int = 800
     image_size: int = 256
@@ -377,6 +378,7 @@ class Workspace:
         eval_steps = 0
         frames: List[np.ndarray] = []
         max_eval_episodes = max(self.cfg.num_eval_episode, self.cfg.num_eval_envs)
+        max_eval_steps = int(self.cfg.eval_max_steps)
         eval_bar = tqdm(
             total=max_eval_episodes,
             desc="Eval",
@@ -386,6 +388,8 @@ class Workspace:
         )
         with torch.no_grad(), utils.eval_mode(self.agent):
             while episode_count < max_eval_episodes:
+                if max_eval_steps > 0 and eval_steps >= max_eval_steps:
+                    break
                 eval_obs = self._slice_obs(obs, self.eval_idx)
                 eval_actions = self.agent.act(eval_obs, eval_mode=True, stddev=0.0, cpu=False)
                 full_actions = self._compose_full_action(eval_actions=eval_actions)
