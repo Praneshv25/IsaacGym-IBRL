@@ -93,6 +93,27 @@ class DiffusionPolicyAdapter(nn.Module):
             wrist = wrist / 255.0
         state = state.to(self.device).float()
 
+        expected_wrist = None
+        expected_state = None
+        try:
+            shape_meta = self.cfg.shape_meta
+            expected_wrist = tuple(shape_meta.obs.wrist.shape)
+            expected_state = tuple(shape_meta.obs.state.shape)
+        except Exception:
+            try:
+                shape_meta = self.cfg.task.shape_meta
+                expected_wrist = tuple(shape_meta.obs.wrist.shape)
+                expected_state = tuple(shape_meta.obs.state.shape)
+            except Exception:
+                pass
+
+        print(
+            "[bc] history shapes "
+            f"wrist={tuple(wrist.shape)} expected_frame={expected_wrist}; "
+            f"state={tuple(state.shape)} expected_state={expected_state}",
+            flush=True,
+        )
+
         return {
             "wrist": wrist,
             "state": state,
