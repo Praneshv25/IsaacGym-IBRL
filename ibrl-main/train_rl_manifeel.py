@@ -374,6 +374,7 @@ class Workspace:
         obs = self.train_env.reset()
         success_count = 0
         episode_count = 0
+        eval_steps = 0
         frames: List[np.ndarray] = []
         max_eval_episodes = max(self.cfg.num_eval_episode, self.cfg.num_eval_envs)
         eval_bar = tqdm(
@@ -389,6 +390,13 @@ class Workspace:
                 eval_actions = self.agent.act(eval_obs, eval_mode=True, stddev=0.0, cpu=False)
                 full_actions = self._compose_full_action(eval_actions=eval_actions)
                 next_obs, _, dones, successes = self.train_env.step(full_actions)
+                eval_steps += int(self.eval_idx.numel())
+                eval_bar.set_postfix(
+                    success=success_count,
+                    episodes=episode_count,
+                    steps=eval_steps,
+                    refresh=False,
+                )
                 if self.cfg.num_eval_videos > 0 and len(frames) < self.cfg.episode_length:
                     frames.append(self._obs_to_video_frame(next_obs, int(self.eval_idx[0].item())))
                 eval_dones = dones.index_select(0, self.eval_idx)
@@ -402,6 +410,7 @@ class Workspace:
                     eval_bar.set_postfix(
                         success=success_count,
                         episodes=episode_count,
+                        steps=eval_steps,
                         refresh=False,
                     )
                 obs = next_obs
