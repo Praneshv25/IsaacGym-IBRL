@@ -248,9 +248,9 @@ class Workspace:
             f"state:shape={tuple(state.shape)} dtype={state.dtype} device={state.device}",
             flush=True,
         )
-        prop_out = prop.detach().to(dtype=torch.float32).cpu().contiguous()
+        prop_out = prop.detach().cpu().clone().to(dtype=torch.float32).contiguous()
         print(f"[ibrl] pack prop ok shape={tuple(prop_out.shape)} dtype={prop_out.dtype}", flush=True)
-        state_out = state.detach().to(dtype=torch.float32).cpu().contiguous()
+        state_out = state.detach().cpu().clone().to(dtype=torch.float32).contiguous()
         print(f"[ibrl] pack state ok shape={tuple(state_out.shape)} dtype={state_out.dtype}", flush=True)
 
         return {
@@ -280,7 +280,9 @@ class Workspace:
         _dbg("[ibrl] warmup reset")
         obs = self.train_env.reset()
         _dbg("[ibrl] warmup reset ok")
+        _dbg("[ibrl] warmup reset_current_episodes")
         self.replay.reset_current_episodes()
+        _dbg("[ibrl] warmup reset_current_episodes ok")
         _dbg("[ibrl] warmup new_episodes")
         packed_obs = self._pack_replay_obs(obs)
         for i in range(self.replay.num_envs):
