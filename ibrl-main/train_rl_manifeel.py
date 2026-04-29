@@ -423,7 +423,12 @@ class Workspace:
             video_dir.mkdir(parents=True, exist_ok=True)
             with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False, dir=video_dir) as tmp:
                 video_path = tmp.name
-            imageio.mimsave(video_path, frames, fps=self.cfg.video_fps)
+            imageio.mimsave(
+                video_path,
+                frames,
+                fps=self.cfg.video_fps,
+                codec="libx264",
+            )
             videos.append(wandb.Video(video_path, fps=self.cfg.video_fps, format="mp4"))
 
         mean_score = success_count / max(episode_count, 1)

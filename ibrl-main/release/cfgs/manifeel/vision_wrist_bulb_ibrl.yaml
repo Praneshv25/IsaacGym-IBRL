@@ -7,7 +7,7 @@ dp_checkpoint: "/Users/PV/Desktop/CS 441/IsaacGym-IBRL/Diffusion Checkpoint Epoc
 
 num_train_envs: 1
 num_eval_envs: 1
-num_eval_episode: 2
+num_eval_episode: 1
 num_eval_videos: 1
 episode_length: 800
 image_size: 96
@@ -45,7 +45,7 @@ num_critic_update: 1
 update_freq: 1
 num_warm_up_episode: 0
 num_train_step: 500
-log_per_step: 100
+log_per_step: 1
 add_bc_loss: 0
 
 save_dir: "exps/rl/manifeel_bulb/seed1"
