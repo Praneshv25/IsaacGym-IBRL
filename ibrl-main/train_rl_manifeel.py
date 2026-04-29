@@ -11,6 +11,7 @@ import pyrallis
 import torch
 import wandb
 import yaml
+import hydra
 from hydra import initialize_config_dir
 from hydra.core.global_hydra import GlobalHydra
 from omegaconf import OmegaConf
@@ -206,25 +207,28 @@ class Workspace:
         if not OmegaConf.has_resolver("eval"):
             OmegaConf.register_new_resolver("eval", eval)
 
-        from manifeel.env_runner.vistac_pih_runner_fix_ori import ManifeelRunner
-
         config_dir = os.path.join(abs_root, "manifeel", "config")
         output_dir = str(Path(self.work_dir).joinpath("eval_runner"))
         os.makedirs(output_dir, exist_ok=True)
+        overrides = [
+            "task=vision_wrist",
+            "isaacgym_cfg_name=isaacgym_config_bulb.yaml",
+            f"training.seed={self.cfg.seed}",
+            f"n_obs_steps={self.n_obs_steps}",
+            "n_action_steps=1",
+            f"task.env_runner.n_test={self.cfg.num_eval_episode}",
+            f"task.env_runner.n_test_vis={self.cfg.num_eval_videos}",
+            f"task.env_runner.max_steps={self.cfg.episode_length}",
+        ]
 
         GlobalHydra.instance().clear()
         with initialize_config_dir(config_dir=config_dir, version_base="1.1"):
-            runner = ManifeelRunner(
+            cfg = hydra.compose(config_name="train_diffusion_workspace", overrides=overrides)
+            cfg.training.device = self.cfg.rl_device
+            cfg.task.env_runner.test_start_seed = self.cfg.seed + 100000
+            runner = hydra.utils.instantiate(
+                cfg.task.env_runner,
                 output_dir=output_dir,
-                shape_meta=self.bc_policy.cfg.task.shape_meta,
-                isaacgym_cfg_name="isaacgym_config_bulb",
-                n_test=self.cfg.num_eval_episode,
-                n_test_vis=self.cfg.num_eval_videos,
-                test_start_seed=self.cfg.seed + 100000,
-                max_steps=self.cfg.episode_length,
-                n_obs_steps=self.n_obs_steps,
-                n_action_steps=1,
-                fps=self.cfg.video_fps,
             )
         return runner
 

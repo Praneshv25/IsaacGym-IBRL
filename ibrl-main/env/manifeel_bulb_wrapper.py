@@ -10,6 +10,7 @@ except ImportError:
     pass
 
 import numpy as np
+import hydra
 from hydra import compose, initialize_config_dir
 from hydra.core.global_hydra import GlobalHydra
 from omegaconf import OmegaConf
@@ -78,44 +79,35 @@ class ManiFeelBulbVecEnv:
         if not OmegaConf.has_resolver("eval"):
             OmegaConf.register_new_resolver("eval", eval)
 
+        if self.image_hw != (256, 256):
+            raise ValueError(
+                f"Restart path currently expects 256x256 wrist images, got {self.image_hw}."
+            )
+
         config_dir = os.path.join(self.manifeel_root, "manifeel", "config")
-        vision_cfg_path = os.path.join(config_dir, "task", "vision_wrist.yaml")
-        vision_cfg = OmegaConf.load(vision_cfg_path)
-        shape_meta = OmegaConf.create(vision_cfg.shape_meta)
-
-        if self.isaac_camera != "wrist":
-            if self.isaac_camera not in shape_meta.obs:
-                shape_meta.obs[self.isaac_camera] = shape_meta.obs["wrist"]
-            del shape_meta.obs["wrist"]
-            shape_meta.obs["wrist"] = shape_meta.obs[self.isaac_camera]
-
-        if list(shape_meta.obs.wrist.shape) != [3, self.image_hw[0], self.image_hw[1]]:
-            shape_meta.obs.wrist.shape = [3, self.image_hw[0], self.image_hw[1]]
-
-        from manifeel.envs.vistac_isaacgym_multiple_env_wrapper import MultipleIsaacEnvWrapper
+        overrides = [
+            "task=vision_wrist",
+            "isaacgym_cfg_name=isaacgym_config_bulb.yaml",
+            f"training.seed={self._seed}",
+            f"n_obs_steps={self.n_obs_steps}",
+            "n_action_steps=1",
+            f"task.env_runner.n_test={self.num_envs}",
+            "task.env_runner.n_test_vis=1",
+            f"task.env_runner.max_steps={self.max_episode_length}",
+        ]
 
         GlobalHydra.instance().clear()
         with initialize_config_dir(config_dir=config_dir, version_base="1.1"):
-            cfg = compose(config_name="isaacgym_config_bulb")
-        cfg.shape_meta = shape_meta
-        cfg.num_envs = self.num_envs
-        cfg.sim_device = sim_device
-        cfg.rl_device = rl_device
-        cfg.graphics_device_id = int(graphics_device_id)
-        cfg.headless = bool(headless)
-        cfg.capture_video = False
-        cfg.force_render = bool(force_render)
-        cfg.task.rl.max_episode_length = self.max_episode_length
+            cfg = compose(config_name="train_diffusion_workspace", overrides=overrides)
+            cfg.training.device = rl_device
+            cfg.task.env_runner.test_start_seed = self._seed
+            runner = hydra.utils.instantiate(
+                cfg.task.env_runner,
+                output_dir=os.path.join(self.manifeel_root, "data", "outputs", "ibrl_train_env"),
+            )
 
-        for camera_cfg in cfg.task.env.camera_configs:
-            if camera_cfg.name in {self.isaac_camera, "client"}:
-                camera_cfg.image_size = [self.image_hw[0], self.image_hw[1]]
-        if self.isaac_camera in cfg.task.env.obsDims:
-            cfg.task.env.obsDims[self.isaac_camera] = [self.image_hw[0], self.image_hw[1], 3]
-        if "client" in cfg.task.env.obsDims:
-            cfg.task.env.obsDims["client"] = [self.image_hw[0], self.image_hw[1], 3]
-
-        self._base_env = MultipleIsaacEnvWrapper(cfg)
+        self._runner = runner
+        self._base_env = runner.env.env.env
         self._base_env.seed(self._seed)
 
         self._episode_reward = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
