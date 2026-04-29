@@ -264,11 +264,34 @@ class Workspace:
         self._inflate_obs(batch.obs)
         self._inflate_obs(batch.next_obs)
 
+    def _probe_replay_obs(self, obs: Dict[str, torch.Tensor]) -> None:
+        probe_specs = [
+            ("state_only", ["state"]),
+            ("state_prop", ["state", "prop"]),
+            ("image_only", [self.cfg.rl_camera]),
+            ("full_obs", ["state", "prop", self.cfg.rl_camera]),
+        ]
+        for name, keys in probe_specs:
+            probe = {k: obs[k][0].detach().cpu().contiguous() for k in keys}
+            print(
+                f"[ibrl] replay probe {name}: "
+                + ", ".join(
+                    f"{k}:shape={tuple(v.shape)} dtype={v.dtype} device={v.device}"
+                    for k, v in probe.items()
+                ),
+                flush=True,
+            )
+            ep = common_utils.rela.Episode(self.cfg.nstep, self.cfg.episode_length, self.cfg.discount)
+            ep.init({})
+            ep.push_obs(probe)
+            print(f"[ibrl] replay probe {name} ok", flush=True)
+
     def warm_up(self) -> None:
         _dbg("[ibrl] warmup reset")
         obs = self.train_env.reset()
         _dbg("[ibrl] warmup reset ok")
         self.replay.reset_current_episodes()
+        self._probe_replay_obs(self._pack_replay_obs(obs))
         _dbg("[ibrl] warmup new_episodes")
         self.replay.new_episodes(self._pack_replay_obs(obs))
         _dbg("[ibrl] warmup new_episodes ok")

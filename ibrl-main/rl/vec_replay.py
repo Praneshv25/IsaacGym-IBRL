@@ -163,7 +163,7 @@ class VecReplayBuffer:
             Initial observations for all N environments.
         """
         for i in range(self.num_envs):
-            env_obs = {k: v[i].cpu() for k, v in obs.items()}
+            env_obs = {k: v[i].detach().cpu().contiguous() for k, v in obs.items()}
             self.episodes[i].init({})
             self.episodes[i].push_obs(env_obs)
             self._initialized[i] = True
@@ -185,7 +185,7 @@ class VecReplayBuffer:
 
     def _start_single_episode(self, env_id: int, obs: Dict[str, torch.Tensor]) -> None:
         """Initialise the episode tracker for one env with a pre-sliced obs."""
-        cpu_obs = {k: v.cpu() for k, v in obs.items()}
+        cpu_obs = {k: v.detach().cpu().contiguous() for k, v in obs.items()}
         self.episodes[env_id].init({})
         self.episodes[env_id].push_obs(cpu_obs)
         self._initialized[env_id] = True
@@ -233,7 +233,7 @@ class VecReplayBuffer:
             env_reward = float(rewards[i].item())
             env_done = bool(dones[i].item())
             env_success = bool(successes[i].item())
-            env_next = {k: v[i].detach().cpu() for k, v in next_obs.items()}
+            env_next = {k: v[i].detach().cpu().contiguous() for k, v in next_obs.items()}
 
             # ── rela.Episode expects strict push order: ──────────────────
             #   push_obs → push_action → push_reward → push_terminal
