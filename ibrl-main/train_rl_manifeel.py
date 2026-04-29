@@ -251,14 +251,14 @@ class Workspace:
             flush=True,
         )
 
-        wrist_out = wrist.detach().to(dtype=torch.uint8).contiguous()
+        wrist_out = wrist.detach().to(dtype=torch.uint8).cpu().contiguous()
         print(
             f"[ibrl] pack {self.cfg.rl_camera} ok shape={tuple(wrist_out.shape)} dtype={wrist_out.dtype}",
             flush=True,
         )
-        prop_out = prop.detach().to(dtype=torch.float32).contiguous()
+        prop_out = prop.detach().to(dtype=torch.float32).cpu().contiguous()
         print(f"[ibrl] pack prop ok shape={tuple(prop_out.shape)} dtype={prop_out.dtype}", flush=True)
-        state_out = state.detach().to(dtype=torch.float32).contiguous()
+        state_out = state.detach().to(dtype=torch.float32).cpu().contiguous()
         print(f"[ibrl] pack state ok shape={tuple(state_out.shape)} dtype={state_out.dtype}", flush=True)
 
         return {
