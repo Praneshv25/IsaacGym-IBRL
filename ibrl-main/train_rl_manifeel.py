@@ -114,6 +114,10 @@ class _QAgentEvalPolicy:
         return {"action": action.unsqueeze(1)}
 
 
+def _dbg(msg: str) -> None:
+    print(msg, flush=True)
+
+
 class Workspace:
     def __init__(self, cfg: MainConfig):
         self.cfg = cfg
@@ -148,11 +152,11 @@ class Workspace:
                 f"Use rl_camera={cfg.rl_camera!r} so train and eval both see the same ManiFeel view."
             )
 
-        print("[ibrl] creating train env")
+        _dbg("[ibrl] creating train env")
         self.train_env = self._make_env(cfg.num_train_envs, cfg.force_render, seed_offset=0)
-        print("[ibrl] train env ready")
+        _dbg("[ibrl] train env ready")
         self.eval_runner = None
-        print("[ibrl] eval runner deferred")
+        _dbg("[ibrl] eval runner deferred")
 
         self.agent = QAgent(
             False,
@@ -254,20 +258,20 @@ class Workspace:
         self._inflate_obs(batch.next_obs)
 
     def warm_up(self) -> None:
-        print("[ibrl] warmup reset")
+        _dbg("[ibrl] warmup reset")
         obs = self.train_env.reset()
-        print("[ibrl] warmup reset ok")
+        _dbg("[ibrl] warmup reset ok")
         self.replay.reset_current_episodes()
         self.replay.new_episodes(self._pack_replay_obs(obs))
 
         while self.replay.size() < self.cfg.num_warm_up_episode:
-            print("[ibrl] warmup bc act")
+            _dbg("[ibrl] warmup bc act")
             with torch.no_grad(), utils.eval_mode(self.bc_policy):
                 actions = self.bc_policy.act(obs, cpu=False)
-            print("[ibrl] warmup bc act ok")
-            print("[ibrl] warmup step")
+            _dbg("[ibrl] warmup bc act ok")
+            _dbg("[ibrl] warmup step")
             next_obs, rewards, dones, successes = self.train_env.step(actions)
-            print("[ibrl] warmup step ok")
+            _dbg("[ibrl] warmup step ok")
             self.replay.add_step(
                 self._pack_replay_obs(next_obs),
                 actions,
@@ -281,9 +285,9 @@ class Workspace:
 
     def eval(self) -> Dict[str, object]:
         if self.eval_runner is None:
-            print("[ibrl] creating eval runner")
+            _dbg("[ibrl] creating eval runner")
             self.eval_runner = self._make_eval_runner()
-            print("[ibrl] eval runner ready")
+            _dbg("[ibrl] eval runner ready")
         with torch.no_grad(), utils.eval_mode(self.agent):
             self.eval_policy.reset()
             log_data = self.eval_runner.run(self.eval_policy)
@@ -360,9 +364,9 @@ class Workspace:
         self.warm_up()
         stopwatch = common_utils.Stopwatch()
 
-        print("[ibrl] train reset")
+        _dbg("[ibrl] train reset")
         obs = self.train_env.reset()
-        print("[ibrl] train reset ok")
+        _dbg("[ibrl] train reset ok")
         self.replay.reset_current_episodes()
         self.replay.new_episodes(self._pack_replay_obs(obs))
         running_lengths = torch.zeros(self.train_env.num_envs, dtype=torch.long, device=self.train_env.device)
