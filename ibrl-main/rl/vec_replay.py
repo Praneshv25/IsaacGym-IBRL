@@ -164,8 +164,18 @@ class VecReplayBuffer:
         """
         for i in range(self.num_envs):
             env_obs = {k: v[i].detach().cpu().contiguous() for k, v in obs.items()}
+            print(
+                f"[ibrl] replay env {i} obs "
+                + ", ".join(
+                    f"{k}:shape={tuple(v.shape)} dtype={v.dtype} device={v.device}"
+                    for k, v in env_obs.items()
+                ),
+                flush=True,
+            )
             self.episodes[i].init({})
+            print(f"[ibrl] replay env {i} init ok", flush=True)
             self.episodes[i].push_obs(env_obs)
+            print(f"[ibrl] replay env {i} push_obs ok", flush=True)
             self._initialized[i] = True
 
     def reset_current_episodes(self) -> None:
