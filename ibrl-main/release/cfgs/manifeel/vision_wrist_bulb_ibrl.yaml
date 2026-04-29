@@ -5,10 +5,10 @@ manifeel_root: "/Users/PV/Desktop/CS 441/IsaacGym-IBRL/Diffusion Policy/manifeel
 isaacgym_envs_path: "/Users/PV/Desktop/CS 441/IsaacGym-IBRL/Diffusion Policy/manifeel-isaacgymenvs"
 dp_checkpoint: "/Users/PV/Desktop/CS 441/IsaacGym-IBRL/Diffusion Checkpoint Epoch 399.ckpt"
 
-num_train_envs: 8
-num_eval_envs: 4
-num_eval_episode: 50
-num_eval_videos: 2
+num_train_envs: 1
+num_eval_envs: 1
+num_eval_episode: 2
+num_eval_videos: 1
 episode_length: 800
 image_size: 96
 rl_camera: "wrist"
@@ -39,13 +39,13 @@ stddev_step: 500000
 nstep: 3
 discount: 0.99
 replay_buffer_size: 500
-gpu_replay_capacity: 20000
-batch_size: 256
+gpu_replay_capacity: 2000
+batch_size: 32
 num_critic_update: 1
 update_freq: 1
-num_warm_up_episode: 20
-num_train_step: 200000
-log_per_step: 10000
+num_warm_up_episode: 1
+num_train_step: 500
+log_per_step: 100
 add_bc_loss: 0
 
 save_dir: "exps/rl/manifeel_bulb/seed1"

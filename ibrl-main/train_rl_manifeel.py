@@ -347,11 +347,10 @@ class Workspace:
     def warm_up(self) -> Dict[str, torch.Tensor]:
         obs = self.train_env.reset()
         warmup_bar = tqdm(
-            total=self.cfg.num_warm_up_episode,
+            total=max(self.cfg.num_warm_up_episode * self.cfg.episode_length, 1),
             desc="Warmup",
             leave=False,
         )
-        last_episode_count = 0
 
         while self.replay.num_episode < self.cfg.num_warm_up_episode:
             with torch.no_grad(), utils.eval_mode(self.bc_policy):
@@ -366,9 +365,8 @@ class Workspace:
                 successes,
             )
             obs = next_obs
-            if self.replay.num_episode > last_episode_count:
-                warmup_bar.update(self.replay.num_episode - last_episode_count)
-                last_episode_count = self.replay.num_episode
+            warmup_bar.update(self.train_env.num_envs)
+            warmup_bar.set_postfix(episodes=f"{self.replay.num_episode}/{self.cfg.num_warm_up_episode}")
 
         warmup_bar.close()
         print(f"Warm up done. #episodes: {self.replay.size()}")
