@@ -129,23 +129,29 @@ class ManiFeelBulbVecEnv:
             rank=0,
         )
 
+    def _dbg(self, msg: str) -> None:
+        print(msg, flush=True)
+
     def _extract_current_obs(self, obs: Dict[str, "torch.Tensor"]) -> Tuple["torch.Tensor", "torch.Tensor"]:
         global torch
 
+        self._dbg("[env] extract before wrist read")
         wrist = obs[self.isaac_camera]
+        self._dbg("[env] extract after wrist read")
         if wrist.dim() == 4 and wrist.shape[-1] == 3:
+            self._dbg("[env] extract before wrist permute")
             wrist = wrist.permute(0, 3, 1, 2)
-        if wrist.is_cuda:
-            torch.cuda.synchronize(wrist.device)
-        # Clone at the env boundary so downstream replay/training code never
-        # holds a direct view into Isaac Gym image memory.
-        wrist = wrist.detach().clone().to(self.device).float().contiguous()
+            self._dbg("[env] extract after wrist permute")
+        wrist = wrist.detach().to(self.device).float()
+        self._dbg("[env] extract after wrist to-float")
         if float(wrist.max()) <= 1.01:
             wrist = wrist * 255.0
+        self._dbg("[env] extract after wrist scale")
 
         ee_pos = obs["ee_pos"].detach().to(self.device).float()
         ee_quat = obs["ee_quat"].detach().to(self.device).float()
         state = torch.cat([ee_pos, ee_quat], dim=1)
+        self._dbg("[env] extract after state concat")
         return wrist, state
 
     def _set_history(self, wrist: "torch.Tensor", state: "torch.Tensor", env_ids: Optional["torch.Tensor"] = None) -> None:
@@ -202,9 +208,13 @@ class ManiFeelBulbVecEnv:
     def reset(self) -> Dict[str, "torch.Tensor"]:
         self._episode_reward.zero_()
         self._episode_step.zero_()
+        self._dbg("[env] reset before raw_reset")
         obs = self._raw_reset()
+        self._dbg("[env] reset after raw_reset")
         wrist, state = self._extract_current_obs(obs)
+        self._dbg("[env] reset after extract")
         self._set_history(wrist, state)
+        self._dbg("[env] reset after set_history")
         return self._format_obs(obs)
 
     def step(self, actions: "torch.Tensor"):
