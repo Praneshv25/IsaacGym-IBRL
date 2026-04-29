@@ -90,6 +90,8 @@ class ManiFeelBulbVecEnv:
             "task.env_runner.n_test_vis=1",
             f"task.env_runner.max_steps={self.max_episode_length}",
         ]
+        output_dir = os.path.join(self.manifeel_root, "data", "outputs", "ibrl_train_env")
+        os.makedirs(output_dir, exist_ok=True)
 
         GlobalHydra.instance().clear()
         with initialize_config_dir(config_dir=config_dir, version_base="1.1"):
@@ -98,7 +100,7 @@ class ManiFeelBulbVecEnv:
             cfg.task.env_runner.test_start_seed = self._seed
             runner = hydra.utils.instantiate(
                 cfg.task.env_runner,
-                output_dir=os.path.join(self.manifeel_root, "data", "outputs", "ibrl_train_env"),
+                output_dir=output_dir,
             )
 
         self._runner = runner
