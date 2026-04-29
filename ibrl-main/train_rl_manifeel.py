@@ -2,7 +2,8 @@ import copy
 import os
 import sys
 from dataclasses import dataclass, field
-from typing import Dict, List, Tuple
+from pathlib import Path
+from typing import Dict, List
 
 import isaacgym  # noqa: F401
 import numpy as np
@@ -10,6 +11,9 @@ import pyrallis
 import torch
 import wandb
 import yaml
+from hydra import initialize_config_dir
+from hydra.core.global_hydra import GlobalHydra
+from omegaconf import OmegaConf
 
 import common_utils
 from bc.diffusion_policy_adapter import DiffusionPolicyAdapter
@@ -82,6 +86,33 @@ class MainConfig(common_utils.RunConfig):
         return f"linear({self.stddev_max},{self.stddev_min},{self.stddev_step})"
 
 
+class _QAgentEvalPolicy:
+    def __init__(self, agent: QAgent, device: str, rl_camera: str) -> None:
+        self.agent = agent
+        self.device = torch.device(device)
+        self.dtype = torch.float32
+        self.rl_camera = rl_camera
+
+    def reset(self) -> None:
+        return
+
+    def predict_action(self, obs: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
+        wrist = obs[self.rl_camera].to(self.device).float()
+        if float(wrist.max()) <= 1.01:
+            wrist = wrist * 255.0
+        state = obs["state"].to(self.device).float()
+
+        agent_obs = {
+            self.rl_camera: wrist[:, -1],
+            "prop": state[:, -1],
+            "state": state[:, -1],
+            "bc_wrist": wrist,
+            "bc_state": state,
+        }
+        action = self.agent.act(agent_obs, eval_mode=True, stddev=0.0, cpu=False)
+        return {"action": action.unsqueeze(1)}
+
+
 class Workspace:
     def __init__(self, cfg: MainConfig):
         self.cfg = cfg
@@ -110,8 +141,14 @@ class Workspace:
         )
         self.n_obs_steps = self.bc_policy.n_obs_steps
 
+        if cfg.isaac_camera != cfg.rl_camera:
+            raise ValueError(
+                f"isaac_camera={cfg.isaac_camera!r} is not supported in the restart path. "
+                f"Use rl_camera={cfg.rl_camera!r} so train and eval both see the same ManiFeel view."
+            )
+
         self.train_env = self._make_env(cfg.num_train_envs, cfg.force_render, seed_offset=0)
-        self.eval_env = self._make_env(cfg.num_eval_envs, cfg.eval_force_render, seed_offset=1000)
+        self.eval_runner = self._make_eval_runner()
 
         self.agent = QAgent(
             False,
@@ -127,6 +164,12 @@ class Workspace:
         if cfg.add_bc_loss:
             self.ref_agent = copy.deepcopy(self.agent)
             self.ref_agent.cfg.act_method = "rl"
+
+        self.eval_policy = _QAgentEvalPolicy(
+            agent=self.agent,
+            device=cfg.rl_device,
+            rl_camera=cfg.rl_camera,
+        )
 
         self.replay = VecReplayBuffer(
             num_envs=self.train_env.num_envs,
@@ -149,57 +192,41 @@ class Workspace:
             n_obs_steps=self.n_obs_steps,
             env_reward_scale=self.cfg.env_reward_scale,
             rl_camera=self.cfg.rl_camera,
-            external_camera=self.cfg.external_camera,
+            isaac_camera=self.cfg.isaac_camera,
             image_hw=(self.cfg.image_size, self.cfg.image_size),
             max_episode_length=self.cfg.episode_length,
             force_render=bool(force_render),
         )
 
-    def _make_bc_history(self, obs: Dict[str, torch.Tensor]) -> Tuple[torch.Tensor, torch.Tensor]:
-        wrist = obs[self.cfg.rl_camera].unsqueeze(1).repeat(1, self.n_obs_steps, 1, 1, 1)
-        state = obs["prop"].unsqueeze(1).repeat(1, self.n_obs_steps, 1)
-        return wrist, state
+    def _make_eval_runner(self):
+        abs_root = os.path.abspath(self.cfg.manifeel_root)
+        if abs_root not in sys.path:
+            sys.path.insert(0, abs_root)
 
-    def _step_bc_history(
-        self,
-        bc_wrist: torch.Tensor,
-        bc_state: torch.Tensor,
-        next_obs: Dict[str, torch.Tensor],
-        dones: torch.Tensor,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        next_wrist = next_obs[self.cfg.rl_camera]
-        next_state = next_obs["prop"]
-        next_bc_wrist = bc_wrist.clone()
-        next_bc_state = bc_state.clone()
+        if not OmegaConf.has_resolver("eval"):
+            OmegaConf.register_new_resolver("eval", eval)
 
-        done_ids = dones.nonzero(as_tuple=False).squeeze(-1)
-        active_mask = torch.ones(dones.shape[0], dtype=torch.bool, device=dones.device)
-        active_mask[done_ids] = False
+        from manifeel.env_runner.vistac_pih_runner_fix_ori import ManifeelRunner
 
-        if active_mask.any():
-            next_bc_wrist[active_mask, :-1] = bc_wrist[active_mask, 1:]
-            next_bc_wrist[active_mask, -1] = next_wrist[active_mask]
-            next_bc_state[active_mask, :-1] = bc_state[active_mask, 1:]
-            next_bc_state[active_mask, -1] = next_state[active_mask]
+        config_dir = os.path.join(abs_root, "manifeel", "config")
+        output_dir = str(Path(self.work_dir).joinpath("eval_runner"))
+        os.makedirs(output_dir, exist_ok=True)
 
-        if done_ids.numel() > 0:
-            reset_wrist = next_wrist[done_ids].unsqueeze(1).repeat(1, self.n_obs_steps, 1, 1, 1)
-            reset_state = next_state[done_ids].unsqueeze(1).repeat(1, self.n_obs_steps, 1)
-            next_bc_wrist[done_ids] = reset_wrist
-            next_bc_state[done_ids] = reset_state
-
-        return next_bc_wrist, next_bc_state
-
-    def _augment_obs(
-        self,
-        obs: Dict[str, torch.Tensor],
-        bc_wrist: torch.Tensor,
-        bc_state: torch.Tensor,
-    ) -> Dict[str, torch.Tensor]:
-        out = dict(obs)
-        out["bc_wrist"] = bc_wrist
-        out["bc_state"] = bc_state
-        return out
+        GlobalHydra.instance().clear()
+        with initialize_config_dir(config_dir=config_dir, version_base="1.1"):
+            runner = ManifeelRunner(
+                output_dir=output_dir,
+                shape_meta=self.bc_policy.cfg.task.shape_meta,
+                isaacgym_cfg_name="isaacgym_config_bulb",
+                n_test=self.cfg.num_eval_episode,
+                n_test_vis=self.cfg.num_eval_videos,
+                test_start_seed=self.cfg.seed + 100000,
+                max_steps=self.cfg.episode_length,
+                n_obs_steps=self.n_obs_steps,
+                n_action_steps=1,
+                fps=self.cfg.video_fps,
+            )
+        return runner
 
     def _pack_replay_obs(self, obs: Dict[str, torch.Tensor]) -> Dict[str, torch.Tensor]:
         return {
@@ -220,18 +247,14 @@ class Workspace:
         self._inflate_obs(batch.next_obs)
 
     def warm_up(self) -> None:
-        raw_obs = self.train_env.reset()
-        bc_wrist, bc_state = self._make_bc_history(raw_obs)
-        obs = self._augment_obs(raw_obs, bc_wrist, bc_state)
+        obs = self.train_env.reset()
         self.replay.reset_current_episodes()
         self.replay.new_episodes(self._pack_replay_obs(obs))
 
         while self.replay.size() < self.cfg.num_warm_up_episode:
             with torch.no_grad(), utils.eval_mode(self.bc_policy):
                 actions = self.bc_policy.act(obs, cpu=False)
-            next_raw_obs, rewards, dones, successes = self.train_env.step(actions)
-            next_bc_wrist, next_bc_state = self._step_bc_history(bc_wrist, bc_state, next_raw_obs, dones)
-            next_obs = self._augment_obs(next_raw_obs, next_bc_wrist, next_bc_state)
+            next_obs, rewards, dones, successes = self.train_env.step(actions)
             self.replay.add_step(
                 self._pack_replay_obs(next_obs),
                 actions,
@@ -240,64 +263,18 @@ class Workspace:
                 successes,
             )
             obs = next_obs
-            bc_wrist, bc_state = next_bc_wrist, next_bc_state
 
         print(f"Warm up done. #episodes: {self.replay.size()}")
 
-    def _record_eval_videos(self, videos: List[np.ndarray]) -> Dict[str, wandb.Video]:
-        payload: Dict[str, wandb.Video] = {}
-        for idx, video in enumerate(videos):
-            payload[f"test/video_{idx}"] = wandb.Video(
-                video.transpose(0, 3, 1, 2),
-                fps=self.cfg.video_fps,
-                format="mp4",
-            )
-        return payload
-
     def eval(self) -> Dict[str, object]:
-        scores: List[float] = []
-        episode_rewards: List[float] = []
-        raw_obs = self.eval_env.reset()
-        bc_wrist, bc_state = self._make_bc_history(raw_obs)
-        obs = self._augment_obs(raw_obs, bc_wrist, bc_state)
-        running_reward = torch.zeros(self.eval_env.num_envs, device=self.eval_env.device)
-
-        num_video_envs = min(self.cfg.num_eval_videos, self.eval_env.num_envs)
-        video_frames: List[List[np.ndarray]] = [[] for _ in range(num_video_envs)]
-        finished_videos: List[np.ndarray] = []
-        initial_frames = self.eval_env.render()
-        for env_id in range(num_video_envs):
-            video_frames[env_id].append(initial_frames[env_id])
-
         with torch.no_grad(), utils.eval_mode(self.agent):
-            while len(scores) < self.cfg.num_eval_episode:
-                actions = self.agent.act(obs, eval_mode=True, stddev=0.0, cpu=False)
-                next_raw_obs, rewards, dones, successes = self.eval_env.step(actions)
-                running_reward += rewards
-                next_bc_wrist, next_bc_state = self._step_bc_history(bc_wrist, bc_state, next_raw_obs, dones)
-                obs = self._augment_obs(next_raw_obs, next_bc_wrist, next_bc_state)
-                bc_wrist, bc_state = next_bc_wrist, next_bc_state
+            self.eval_policy.reset()
+            log_data = self.eval_runner.run(self.eval_policy)
 
-                frames = self.eval_env.render()
-                for env_id in range(num_video_envs):
-                    video_frames[env_id].append(frames[env_id])
-
-                done_ids = dones.nonzero(as_tuple=False).squeeze(-1)
-                for env_id in done_ids.tolist():
-                    if len(scores) >= self.cfg.num_eval_episode:
-                        break
-                    scores.append(float(successes[env_id].item()))
-                    episode_rewards.append(float(running_reward[env_id].item()))
-                    running_reward[env_id] = 0.0
-                    if env_id < num_video_envs and len(finished_videos) < self.cfg.num_eval_videos:
-                        finished_videos.append(np.stack(video_frames[env_id], axis=0).astype(np.uint8))
-                        video_frames[env_id] = [frames[env_id]]
-
+        videos = [value for key, value in log_data.items() if key.startswith("test/sim_video_")]
         return {
-            "scores": scores,
-            "mean_score": float(np.mean(scores)) if scores else 0.0,
-            "mean_reward": float(np.mean(episode_rewards)) if episode_rewards else 0.0,
-            "videos": finished_videos,
+            "mean_score": float(log_data.get("test/mean_score", 0.0)),
+            "videos": videos,
         }
 
     def rl_train(self, stat: common_utils.MultiCounter) -> None:
@@ -335,10 +312,12 @@ class Workspace:
         with stopwatch.time("eval"):
             eval_metrics = self.eval()
             stat["test/mean_score"].append(eval_metrics["mean_score"])
-            stat["test/mean_reward"].append(eval_metrics["mean_reward"])
 
             if self.cfg.use_wb:
-                video_payload = self._record_eval_videos(eval_metrics["videos"])
+                video_payload = {
+                    f"test/video_{idx}": video
+                    for idx, video in enumerate(eval_metrics["videos"])
+                }
                 if video_payload:
                     wandb.log(video_payload, step=self.global_step)
 
@@ -364,9 +343,7 @@ class Workspace:
         self.warm_up()
         stopwatch = common_utils.Stopwatch()
 
-        raw_obs = self.train_env.reset()
-        bc_wrist, bc_state = self._make_bc_history(raw_obs)
-        obs = self._augment_obs(raw_obs, bc_wrist, bc_state)
+        obs = self.train_env.reset()
         self.replay.reset_current_episodes()
         self.replay.new_episodes(self._pack_replay_obs(obs))
         running_lengths = torch.zeros(self.train_env.num_envs, dtype=torch.long, device=self.train_env.device)
@@ -379,12 +356,10 @@ class Workspace:
                 stat["data/stddev"].append(stddev)
 
             with stopwatch.time("env step"):
-                next_raw_obs, rewards, dones, successes = self.train_env.step(actions)
+                next_obs, rewards, dones, successes = self.train_env.step(actions)
 
             running_lengths += 1
             running_rewards += rewards
-            next_bc_wrist, next_bc_state = self._step_bc_history(bc_wrist, bc_state, next_raw_obs, dones)
-            next_obs = self._augment_obs(next_raw_obs, next_bc_wrist, next_bc_state)
 
             with stopwatch.time("add"):
                 self.replay.add_step(
@@ -416,7 +391,6 @@ class Workspace:
                 running_rewards[done_ids] = 0.0
 
             obs = next_obs
-            bc_wrist, bc_state = next_bc_wrist, next_bc_state
 
             if self.global_iter % self.cfg.update_freq == 0:
                 with stopwatch.time("train"):

@@ -12,7 +12,7 @@ num_eval_videos: 2
 episode_length: 800
 image_size: 256
 rl_camera: "wrist"
-isaac_camera: "wrist_2"
+isaac_camera: "wrist"
 external_camera: "client"
 env_reward_scale: 1.0
 sim_device: "cuda:0"
