@@ -10,7 +10,7 @@ num_eval_envs: 4
 num_eval_episode: 50
 num_eval_videos: 2
 episode_length: 800
-image_size: 256
+image_size: 96
 rl_camera: "wrist"
 isaac_camera: "wrist"
 external_camera: "client"
@@ -39,6 +39,7 @@ stddev_step: 500000
 nstep: 3
 discount: 0.99
 replay_buffer_size: 500
+gpu_replay_capacity: 20000
 batch_size: 256
 num_critic_update: 1
 update_freq: 1

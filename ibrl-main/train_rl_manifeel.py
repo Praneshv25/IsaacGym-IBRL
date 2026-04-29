@@ -65,6 +65,7 @@ class MainConfig(common_utils.RunConfig):
     nstep: int = 3
     discount: float = 0.99
     replay_buffer_size: int = 500
+    gpu_replay_capacity: int = 20000
     batch_size: int = 256
     num_critic_update: int = 1
     update_freq: int = 1
@@ -260,7 +261,7 @@ class Workspace:
         )
 
         self.replay = _GpuReplayBuffer(
-            capacity=cfg.replay_buffer_size * self.train_env.num_envs * max(cfg.episode_length, 1),
+            capacity=cfg.gpu_replay_capacity,
             gamma=cfg.discount,
             device=cfg.rl_device,
         )
@@ -328,7 +329,7 @@ class Workspace:
             f"state:shape={tuple(state.shape)} dtype={state.dtype} device={state.device}",
             flush=True,
         )
-        wrist_out = wrist.detach().clone().to(dtype=torch.float32).contiguous()
+        wrist_out = wrist.detach().clone().to(dtype=torch.uint8).contiguous()
         print(
             f"[ibrl] pack {self.cfg.rl_camera} ok shape={tuple(wrist_out.shape)} dtype={wrist_out.dtype}",
             flush=True,
