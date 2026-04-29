@@ -397,6 +397,7 @@ class Workspace:
                     steps=eval_steps,
                     refresh=False,
                 )
+                eval_bar.refresh()
                 if self.cfg.num_eval_videos > 0 and len(frames) < self.cfg.episode_length:
                     frames.append(self._obs_to_video_frame(next_obs, int(self.eval_idx[0].item())))
                 eval_dones = dones.index_select(0, self.eval_idx)
