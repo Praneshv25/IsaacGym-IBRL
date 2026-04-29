@@ -132,9 +132,14 @@ class ManiFeelBulbVecEnv:
     def _extract_current_obs(self, obs: Dict[str, "torch.Tensor"]) -> Tuple["torch.Tensor", "torch.Tensor"]:
         global torch
 
-        wrist = obs[self.isaac_camera].detach().to(self.device).float()
+        wrist = obs[self.isaac_camera]
         if wrist.dim() == 4 and wrist.shape[-1] == 3:
-            wrist = wrist.permute(0, 3, 1, 2).contiguous()
+            wrist = wrist.permute(0, 3, 1, 2)
+        if wrist.is_cuda:
+            torch.cuda.synchronize(wrist.device)
+        # Clone at the env boundary so downstream replay/training code never
+        # holds a direct view into Isaac Gym image memory.
+        wrist = wrist.detach().clone().to(self.device).float().contiguous()
         if float(wrist.max()) <= 1.01:
             wrist = wrist * 255.0
 
