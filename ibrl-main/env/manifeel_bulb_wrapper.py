@@ -75,35 +75,35 @@ class ManiFeelBulbVecEnv:
             raise ValueError(f"Direct train wrapper expects 256x256 observations, got {self.image_hw}.")
 
         config_dir = os.path.join(self.manifeel_root, "manifeel", "config")
-        GlobalHydra.instance().clear()
-        with initialize_config_dir(config_dir=config_dir, version_base="1.1"):
-            cfg = compose(config_name="isaacgym_config_bulb")
-
-        cfg.num_envs = self.num_envs
-        cfg.sim_device = sim_device
-        cfg.rl_device = rl_device
-        cfg.graphics_device_id = int(graphics_device_id)
-        cfg.headless = bool(headless)
-        cfg.capture_video = False
-        cfg.force_render = bool(force_render)
-        cfg.task.rl.max_episode_length = self.max_episode_length
-
         from isaacgymenvs.tasks.tacsl.tacsl_task_bulb import TacSLTaskBulb
         from isaacgymenvs.utils.reformat import omegaconf_to_dict
         from isaacgymenvs.utils.utils import set_seed
 
         self._set_seed = set_seed
-        self._cfg = cfg
-        cfg_dict = omegaconf_to_dict(cfg.task)
-        self.envs = TacSLTaskBulb(
-            cfg=cfg_dict,
-            rl_device=cfg.rl_device,
-            sim_device=cfg.sim_device,
-            graphics_device_id=cfg.graphics_device_id,
-            headless=cfg.headless,
-            virtual_screen_capture=cfg.capture_video,
-            force_render=cfg.force_render,
-        )
+        GlobalHydra.instance().clear()
+        with initialize_config_dir(config_dir=config_dir, version_base="1.1"):
+            cfg = compose(config_name="isaacgym_config_bulb")
+
+            cfg.num_envs = self.num_envs
+            cfg.sim_device = sim_device
+            cfg.rl_device = rl_device
+            cfg.graphics_device_id = int(graphics_device_id)
+            cfg.headless = bool(headless)
+            cfg.capture_video = False
+            cfg.force_render = bool(force_render)
+            cfg.task.rl.max_episode_length = self.max_episode_length
+
+            self._cfg = cfg
+            cfg_dict = omegaconf_to_dict(cfg.task)
+            self.envs = TacSLTaskBulb(
+                cfg=cfg_dict,
+                rl_device=cfg.rl_device,
+                sim_device=cfg.sim_device,
+                graphics_device_id=cfg.graphics_device_id,
+                headless=cfg.headless,
+                virtual_screen_capture=cfg.capture_video,
+                force_render=cfg.force_render,
+            )
 
         self._episode_reward = torch.zeros(self.num_envs, dtype=torch.float32, device=self.device)
         self._episode_step = torch.zeros(self.num_envs, dtype=torch.long, device=self.device)
