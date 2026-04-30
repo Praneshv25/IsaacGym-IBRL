@@ -1,268 +1,364 @@
 # ManiFeel + IBRL Integration Notes
 
-This note summarizes the main problems encountered while integrating a pretrained ManiFeel Diffusion Policy (DP) checkpoint into `ibrl-main` for online RL on the bulb task, along with the solutions and code changes that were made.
+This file summarizes the main issues we hit while integrating ManiFeel Diffusion Policy into `ibrl-main` for online RL on the bulb task, and the code changes we made to get to the current setup.
 
 ## Goal
 
-Use a pretrained ManiFeel BC/Diffusion Policy checkpoint as the BC branch inside IBRL, then continue improving performance with online RL on the bulb task.
-
-## Core Problem
-
-The ManiFeel bulb environment worked in ManiFeel's own `train.py` / `eval.py` flow, but repeatedly failed when driven through custom `ibrl-main` environment wrappers and replay logic.
-
-The integration issues were not caused by the bulb task itself. They came from mismatches between:
-
-- ManiFeel's expected environment lifecycle
-- Isaac Gym GPU pipeline constraints
-- `ibrl-main`'s original MuJoCo-oriented replay/training assumptions
+Use a pretrained ManiFeel BC / Diffusion Policy checkpoint as the BC branch inside IBRL, then continue improving the policy with online RL on the bulb task.
 
 ## Main Problems We Hit
 
-### 1. GPU pipeline crash with old Isaac Gym API usage
+### 1. ManiFeel's stable path did not match `ibrl-main`'s original assumptions
 
-We repeatedly hit:
+ManiFeel's own `train.py` / `eval.py` flow was stable, but early `ibrl-main` integrations were not.
 
-```text
-Function GymGetActorDofStates cannot be used with the GPU pipeline after simulation starts.
-```
+The main mismatch was:
 
-This happened when the bulb task was launched through the wrong path or when a second Isaac stack was created in-process.
+- ManiFeel expects a long-lived Isaac Gym stack
+- original `ibrl-main` code assumed simpler env / replay behavior
+- Isaac Gym bulb + camera + tactile tensors are much less forgiving than MuJoCo-style paths
 
-Why it mattered:
+### 2. Separate train and eval env stacks caused crashes
 
-- bulb depends on GPU-only features like SDF/contact behavior
-- switching to CPU pipeline was not a viable workaround
-- the stable ManiFeel path had to be respected more closely
+Earlier versions used:
 
-### 2. Separate train and eval env stacks were unstable
+- one direct env for training
+- a separate eval runner/env for rollout
 
-Early versions of the RL trainer used:
+That repeatedly led to segfaults when a second Isaac Gym bulb stack was created in-process.
 
-- one direct train env for online RL
-- a separate ManiFeel eval runner/env stack for evaluation
+Key lesson:
 
-This led to repeated segfaults, especially at eval boundaries, because the process was trying to create a second live Isaac Gym bulb stack after already using one.
+- ManiFeel stays stable by reusing one live runner
+- recreating a fresh Isaac stack during training was the wrong pattern here
 
-Important finding:
+### 3. ManiFeel eval reward was not the RL training reward
 
-- ManiFeel `train.py` does **not** create separate train/eval env stacks
-- it keeps one long-lived runner and reuses it
+ManiFeel eval uses a success/reset-style metric path. That is fine for rollout scoring, but it is not the same as the task reward that online RL should train on.
 
-### 3. ManiFeel eval reward was not the dense RL reward
+We verified:
 
-ManiFeel's rollout wrapper is evaluation-oriented and uses a success/reset-style reward path.
+- direct bulb task stepping exposes the real dense reward
+- ManiFeel eval logic is better treated as evaluation semantics, not training semantics
 
-That is fine for `test/mean_score`, but not ideal as the training reward for online RL.
+### 4. The original CPU / `rela` replay path was a bad fit
 
-Key finding:
+The original `ibrl-main` replay path assumed simpler env outputs and CPU-friendly observation materialization.
 
-- the direct bulb task wrapper returns the real dense reward each step
-- this dense reward appears to be the shaped signal RL should train on
+In this integration it caused:
 
-### 4. Original `ibrl-main` replay path was a bad fit
+- crashes when copying Isaac Gym observations into replay
+- instability around GPU-to-CPU transfers
+- awkward mismatch with Diffusion Policy history expectations
 
-The original replay logic in `ibrl-main` was designed around simpler environments and CPU-oriented storage assumptions.
+We replaced it for this trainer with a local GPU-native replay path.
 
-Problems we hit:
+### 5. Diffusion Policy expects observation history, replay stores single steps
 
-- crashes when copying Isaac Gym tensors into replay
-- instability around GPU-to-CPU observation materialization
-- the replay path did not naturally align with Diffusion Policy horizon semantics
+The BC model expects `n_obs_steps` history. The RL trainer stores transitions one step at a time.
 
-### 5. Diffusion Policy expects history, replay stores single steps
+We handled that by:
 
-The BC model expects an observation history over `n_obs_steps`.
-
-But `ibrl-main` replay is fundamentally transition-based and stores single-step observations.
-
-That mismatch had to be handled explicitly.
+- storing single-step RL observations in replay
+- keeping BC history inside the live env wrapper
+- reconstructing the BC-compatible observation format at action time
 
 ### 6. Image-size mismatch between checkpoint and env
 
-When using a `96x96` BC checkpoint, the trainer was still feeding `256x256` wrist images.
+When using a `96x96` checkpoint, the trainer was still feeding `256x256` wrist images at one point.
 
-This caused BC encoder assertion failures.
+This caused BC encoder shape assertions.
 
-### 7. Subset reset in TacSL bulb was broken
+The fix was:
 
-We hit:
+- make the RL wrapper enforce the configured image size
+- keep the live RL / BC observation path aligned to `image_size`
 
-```text
-RuntimeError: shape mismatch: value tensor of shape [8, 3] cannot be broadcast to indexing result of shape [1, 3]
-```
+### 7. Subset reset in TacSL bulb was not safe enough for RL
 
-This came from the bulb task's object reset path when trying to reset only a subset of environments.
+The original bulb task file was written around ManiFeel's assumptions, not this online RL setup.
 
-## Final Architecture We Moved To
+We hit subset-reset shape bugs and control-path bugs while trying to reset only some envs.
 
-### Unified single-stack env design
+Examples included:
 
-Instead of separate train/eval env stacks, the current setup uses one long-lived direct bulb env stack:
+- object reset shape mismatch on subset envs
+- methods accidentally assuming full-env tensors
+- gripper target shape assumptions breaking with vectorized RL control
+
+### 8. Dense reward produced unstable behavior
+
+With dense reward, the hybrid policy tended to drift into bad RL behavior quickly:
+
+- critic and actor losses were large
+- eval success stayed at zero
+- videos showed the robot thrashing / wandering
+
+This made the dense setup look numerically active but behaviorally poor.
+
+### 9. Sparse reward was more stable, but replay became dominated by failures
+
+Sparse reward made training much calmer, but then most online transitions had zero reward.
+
+That meant:
+
+- successful BC-like behavior was getting drowned out
+- the critic mostly trained on zero-reward failures
+- the hybrid policy could still drift away from the strong BC baseline
+
+This motivated the later demo-buffer changes.
+
+## Current Architecture
+
+### Unified single-stack train/eval design
+
+The current trainer uses one long-lived direct bulb env stack:
 
 - total envs = `num_train_envs + num_eval_envs`
-- the first subset is used for training
-- the second subset is used for evaluation
-- no second Isaac stack is created during training
+- first subset = training envs
+- second subset = eval envs
+- no separate ManiFeel eval runner is launched during training
 
-This is much closer to the stable ManiFeel pattern.
+This is much closer to ManiFeel's stable “one live stack” pattern.
 
-### Direct dense-reward train env
+### Direct RL env wrapper
 
-Training now uses a direct `TacSLTaskBulb`-based wrapper instead of ManiFeel's eval runner.
+Training uses a direct bulb wrapper instead of ManiFeel's eval runner:
 
-Why:
+- reward comes directly from the task wrapper
+- BC-compatible `wrist`, `prop`, `state`, `bc_wrist`, `bc_state` are built there
+- wrist images are resized to the configured `image_size`
 
-- we need dense reward for RL
-- we need stable long-lived env ownership
-- we want to avoid ManiFeel's eval-specific reward rewriting during training
+### Separate IBRL-specific bulb task file
 
-### Same stack used for evaluation
+To avoid breaking Diffusion Policy training, we split the task file:
 
-Evaluation now runs on the held-out eval subset of the same env stack instead of launching a fresh ManiFeel runner in-process.
+- original DP path still uses:
+  - `/Users/PV/Desktop/CS 441/IsaacGym-IBRL/Diffusion Policy/manifeel-isaacgymenvs/isaacgymenvs/tasks/tacsl/tacsl_task_bulb.py`
+- RL path now uses:
+  - `/Users/PV/Desktop/CS 441/IsaacGym-IBRL/Diffusion Policy/manifeel-isaacgymenvs/isaacgymenvs/tasks/tacsl/tacsl_task_bulb_ibrl.py`
 
-This avoids the previous eval-time segfaults caused by train/eval stack swapping.
+The RL wrapper imports `TacSLTaskBulbIBRL` explicitly.
 
 ## Important Code Changes
 
 ### `/Users/PV/Desktop/CS 441/IsaacGym-IBRL/ibrl-main/train_rl_manifeel.py`
 
-Main changes:
+Main trainer changes:
 
-- introduced ManiFeel-specific RL trainer path
-- replaced old separate eval-runner lifecycle with a unified single-stack design
-- created train/eval env index partitions
-- switched replay to a GPU-native local replay buffer
-- added warmup and train/eval progress bars with `tqdm`
-- added optional eval step cap (`eval_max_steps`) for smoke testing
-- fixed eval video export by explicitly setting codec
+- added a ManiFeel-specific online RL trainer
+- uses one unified env stack for train and eval
+- keeps separate train / eval env index subsets
+- replaced the old CPU / `rela` replay path with a local GPU replay buffer
+- added `tqdm` progress bars for warmup, train, and eval
+- records eval videos directly from the same stack
 
-Notable architectural changes:
+Replay / data changes:
 
-- one env stack for both train and eval
-- train steps use only `train_idx`
-- eval steps use only `eval_idx`
-- `global_step` tracks training env steps
+- added a normal online replay buffer:
+  - `self.replay`
+- added a separate demo replay buffer:
+  - `self.demo_replay`
+- warmup BC rollout now fills:
+  - online replay with all transitions
+  - demo replay with only successful BC episodes
+- each update now uses a fixed mixed batch:
+  - online replay samples
+  - plus demo replay samples according to `demo_batch_ratio`
+
+Actor-update changes:
+
+- actor BC regularization is enabled through `add_bc_loss`
+- BC regularization now samples from the demo replay, not the polluted online replay
+- this increases BC influence specifically on successful BC data
+
+Current important config knobs in this trainer:
+
+- `reward_mode`
+- `gpu_replay_capacity`
+- `demo_replay_capacity`
+- `demo_batch_ratio`
+- `add_bc_loss`
 
 ### `/Users/PV/Desktop/CS 441/IsaacGym-IBRL/ibrl-main/env/manifeel_bulb_wrapper.py`
 
+Main wrapper changes:
+
+- direct ManiFeel bulb RL env wrapper
+- imports `TacSLTaskBulbIBRL`
+- composes Hydra config correctly for direct task construction
+- exposes:
+  - `wrist`
+  - `prop`
+  - `state`
+  - BC history tensors
+- enforces the configured image size
+- supports:
+  - `reward_mode="dense"`
+  - `reward_mode="sparse"`
+
+Sparse reward behavior:
+
+- sparse reward uses success as the training reward
+- dense reward uses the task reward returned by the env
+
+### `/Users/PV/Desktop/CS 441/IsaacGym-IBRL/ibrl-main/rl/q_agent.py`
+
 Main changes:
 
-- added direct `TacSLTaskBulb` wrapper for RL training
-- compose ManiFeel bulb config under Hydra correctly
-- expose dense reward, success, wrist/state observations
-- maintain BC history tensors (`bc_wrist`, `bc_state`)
-- resize wrist images to the configured target resolution
-- build `state = concat(ee_pos, ee_quat)` for BC compatibility
+- made the active `ibrl` path batch-safe for train acting
+- removed the old train-time `bsize == 1` assumption from `_act_ibrl()`
+- train/eval/bootstrap BC-selection stats now work with batched envs
 
-Current workaround:
+This is what enabled moving `num_train_envs` from 1 to 8 for the active `ibrl` path.
 
-- because subset reset in the bulb task is unstable, the wrapper currently performs a **full vector reset whenever any env finishes**
+The `ibrl_soft` path was intentionally left untouched.
 
-This is not ideal RL semantics, but it keeps the pipeline running.
+### `/Users/PV/Desktop/CS 441/IsaacGym-IBRL/Diffusion Policy/manifeel-isaacgymenvs/isaacgymenvs/tasks/tacsl/tacsl_task_bulb_ibrl.py`
 
-### `/Users/PV/Desktop/CS 441/IsaacGym-IBRL/ibrl-main/bc/diffusion_policy_adapter.py`
+Main RL-only task changes:
 
-Main changes:
+- created a separate `TacSLTaskBulbIBRL` class
+- fixed subset reset behavior in the RL path
+- fixed subset object reset assignment bugs
+- made gripper/control target handling accept vectorized RL shapes
+- made subset robot/object reset helpers work on selected envs instead of assuming full-env resets
 
-- load ManiFeel DP checkpoint for BC action proposals
-- support history input using either:
-  - explicit `bc_wrist` / `bc_state`
-  - or repeated current observations if needed
-
-This is how the BC branch remains compatible with a transition-style RL loop.
+This file is the main place where ManiFeel bulb task behavior was adapted for online vectorized RL.
 
 ### `/Users/PV/Desktop/CS 441/IsaacGym-IBRL/ibrl-main/release/cfgs/manifeel/vision_wrist_bulb_ibrl.yaml`
 
-Main changes:
+Current important settings:
 
-- added ManiFeel-specific RL config values
-- image size aligned with the selected BC checkpoint
-- smoke-test parameters were added and later restored to longer-run values
-- `gpu_replay_capacity` added for the custom GPU replay buffer
-- `eval_max_steps` added for quick end-to-end tests
+- `num_train_envs: 8`
+- `num_eval_envs: 50`
+- `num_eval_episode: 2`
+- `episode_length: 800`
+- `image_size: 96`
+- `reward_mode: "sparse"`
+- `gpu_replay_capacity: 2000`
+- `demo_replay_capacity: 20000`
+- `demo_batch_ratio: 0.5`
+- `add_bc_loss: 1`
+- `q_agent.bc_loss_coef: 1.0`
 
-## Replay Changes
+Important reminder:
 
-The original CPU/`rela` episode replay path was effectively abandoned for this ManiFeel trainer.
+- the YAML still points to an older local checkpoint path
+- actual Linux runs should override `--dp_checkpoint` with the correct `96x96` BC checkpoint
 
-Reason:
+## Reward Evolution
 
-- it repeatedly crashed on Isaac Gym observation handling
-- it assumed a simpler environment/data flow than this setup provides
+### Dense reward phase
 
-Current solution:
+Dense reward was tested first because it matches the underlying task reward.
 
-- a local GPU replay buffer is used inside `train_rl_manifeel.py`
-- it stores:
-  - current obs
-  - next obs
-  - action
-  - reward
-  - bootstrap mask
+Result:
 
-The replay stores single-step transitions, not full DP horizon windows.
+- RL quickly became behaviorally unstable
+- eval success stayed at zero
+- videos looked worse than BC
 
-## Warmup Behavior
+Conclusion:
 
-Warmup currently:
+- dense reward gave a lot of signal, but not the right behavioral pressure for this setup
 
-- uses only the frozen BC/Diffusion Policy to act
-- fills replay with initial transitions
-- does **not** train the Q function directly
+### Sparse reward phase
 
-The Q function begins training after warmup, using the replay data warmup collected.
+Sparse reward was then used, with success as the reward signal.
+
+Result:
+
+- training became much more numerically stable
+- BC remained a stronger anchor
+- but online replay was still mostly filled with zero-reward failures
+
+Conclusion:
+
+- sparse reward was better than dense reward for stability
+- but needed extra help to preserve successful BC behavior
+
+## Demo / Replay Strategy
+
+The current replay strategy is:
+
+- online replay:
+  - stores all online transitions
+- demo replay:
+  - stores only successful BC warmup episodes
+
+Training batches are mixed from both buffers.
+
+Why:
+
+- online replay provides current on-policy-ish coverage
+- demo replay preserves what successful behavior looks like
+- actor BC loss should pull toward successful BC trajectories, not failed online ones
+
+This was added specifically because the sparse-reward run showed the critic was learning from almost entirely zero-reward online data.
 
 ## Evaluation Behavior
 
 Evaluation currently:
 
-- runs on the eval subset of the same env stack
-- uses the RL agent in eval mode
-- records one wrist-camera video when enabled
-- logs `test/mean_score` and video to WandB
+- runs on the eval subset of the same live env stack
+- uses the hybrid IBRL policy in eval mode
+- logs `test/mean_score`
+- records wrist-camera video
+- can run up to 50 eval envs in parallel
 
-For smoke testing, eval was temporarily reduced to one step. That was later restored to full episode-based eval.
+This is no longer ManiFeel's original `env_runner.run(policy)` path. It is trainer-local eval built on the unified env stack.
 
 ## Current Known Limitations
 
-### 1. `num_train_envs` is still effectively limited to 1
+### 1. This is still not the exact original ManiFeel eval path
 
-The current IBRL action-selection path in `QAgent` still assumes batch size 1 in training mode.
+The current eval loop is custom and trainer-local.
 
-This is the main reason full training remains slow.
+It is stable enough for online RL, but it is not identical to ManiFeel's offline eval pipeline.
 
-If that path is generalized to support batch size >1, training speed should improve substantially.
+### 2. The IBRL-specific bulb task file is still the riskiest integration point
 
-### 2. Full-reset workaround on any done
+Most of the hard environment adaptation work lives in:
 
-Because subset resets in the bulb task are unstable, one env finishing causes a full env-stack reset.
+- `/Users/PV/Desktop/CS 441/IsaacGym-IBRL/Diffusion Policy/manifeel-isaacgymenvs/isaacgymenvs/tasks/tacsl/tacsl_task_bulb_ibrl.py`
 
-This keeps the system alive but is not ideal.
+That file should be treated carefully because it is where most RL-specific reset/control fixes were made.
 
-### 3. Eval metric is now trainer-local
+### 3. BC influence is stronger now, but still heuristic
 
-The current eval loop no longer uses ManiFeel's `env_runner.run(policy)` directly.
+The current solution uses:
 
-That was necessary for stability, but it means eval now depends on the unified-stack RL trainer implementation rather than ManiFeel's original runner abstraction.
+- success-only demo replay
+- fixed demo/online batch mixing
+- actor BC regularization
+
+This is a practical stabilization strategy, not a fully new RL algorithm.
 
 ## Practical Runtime Notes
 
-With the current stable setup:
+With the current setup:
 
-- warmup is slow because it runs BC rollout in the real bulb env
-- training is slow mainly because `num_train_envs = 1`
-- a full 200k-step run can take a long time
-
-The single biggest runtime improvement would likely be:
-
-- fixing `QAgent` train-time action selection to support batched envs, e.g. `num_train_envs = 8`
+- warmup is expensive because it uses real BC rollout in the bulb env
+- 8 train envs substantially improve throughput over 1 env
+- 50 eval envs make eval more expensive, but much faster in env-step terms than serial eval
+- sparse reward is currently the more promising training mode
 
 ## Summary
 
-The key lessons from this integration were:
+The integration moved from an unstable “bolt ManiFeel onto old `ibrl-main` assumptions” approach to a ManiFeel-specific online RL path with:
 
-1. ManiFeel bulb is stable when the simulator stack stays long-lived.
-2. Dense-reward RL should use the direct task env, not ManiFeel's eval reward wrapper.
-3. The original CPU replay assumptions in `ibrl-main` were a poor fit for Isaac Gym + ManiFeel.
-4. A unified single-stack train/eval architecture was necessary to avoid repeated segfaults.
-5. The current pipeline works, but there are still speed and batching limitations worth improving next.
+- one unified live Isaac stack
+- a separate RL-specific bulb task file
+- batch-safe `ibrl` acting
+- sparse reward support
+- GPU-native replay
+- a success-only demo replay buffer
+- mixed demo/online training batches
+- stronger BC influence in actor updates
+
+The main current strategy is:
+
+- keep BC behavior alive explicitly
+- let RL learn on top of it more cautiously
+- avoid letting online failure data completely wash out the successful BC prior

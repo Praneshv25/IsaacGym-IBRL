@@ -34,6 +34,7 @@ q_agent:
   enc_type: "vit"
   act_method: "ibrl"
   bootstrap_method: "ibrl"
+  bc_loss_coef: 1.0
 
 stddev_max: 1.0
 stddev_min: 0.1
@@ -42,13 +43,15 @@ nstep: 3
 discount: 0.99
 replay_buffer_size: 500
 gpu_replay_capacity: 2000
+demo_replay_capacity: 20000
 batch_size: 32
+demo_batch_ratio: 0.5
 num_critic_update: 1
 update_freq: 1
 num_warm_up_episode: 20
 num_train_step: 200000
 log_per_step: 10000
-add_bc_loss: 0
+add_bc_loss: 1
 
 save_dir: "exps/rl/manifeel_bulb/seed1"
 use_wb: 1

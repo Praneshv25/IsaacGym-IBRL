@@ -71,13 +71,15 @@ class MainConfig(common_utils.RunConfig):
     discount: float = 0.99
     replay_buffer_size: int = 500
     gpu_replay_capacity: int = 20000
+    demo_replay_capacity: int = 20000
     batch_size: int = 256
+    demo_batch_ratio: float = 0.5
     num_critic_update: int = 1
     update_freq: int = 1
     num_warm_up_episode: int = 20
     num_train_step: int = 200000
     log_per_step: int = 10000
-    add_bc_loss: int = 0
+    add_bc_loss: int = 1
 
     save_dir: str = "exps/rl/manifeel_bulb/run1"
     use_wb: int = 0
@@ -258,6 +260,11 @@ class Workspace:
             gamma=cfg.discount,
             device=cfg.rl_device,
         )
+        self.demo_replay = _GpuReplayBuffer(
+            capacity=cfg.demo_replay_capacity,
+            gamma=cfg.discount,
+            device=cfg.rl_device,
+        )
 
     def _make_env(self, num_envs: int, force_render: int, seed_offset: int) -> ManiFeelBulbVecEnv:
         return ManiFeelBulbVecEnv(
@@ -338,8 +345,131 @@ class Workspace:
         self._inflate_obs(batch.obs)
         self._inflate_obs(batch.next_obs)
 
+    def _merge_batches(self, first: _GpuBatch, second: _GpuBatch) -> _GpuBatch:
+        obs = {k: torch.cat([first.obs[k], second.obs[k]], dim=0) for k in first.obs}
+        next_obs = {k: torch.cat([first.next_obs[k], second.next_obs[k]], dim=0) for k in first.next_obs}
+        action = {"action": torch.cat([first.action["action"], second.action["action"]], dim=0)}
+        reward = torch.cat([first.reward, second.reward], dim=0)
+        bootstrap = torch.cat([first.bootstrap, second.bootstrap], dim=0)
+        return _GpuBatch(obs, next_obs, action, reward, bootstrap)
+
+    def _sample_train_batch(self) -> _GpuBatch:
+        if self.replay.size() <= 0:
+            assert self.demo_replay.size() > 0, "both online and demo replay are empty"
+            batch = self.demo_replay.sample(self.cfg.batch_size, self.cfg.rl_device)
+            self._inflate_batch(batch)
+            return batch
+
+        demo_ratio = float(np.clip(self.cfg.demo_batch_ratio, 0.0, 1.0))
+        demo_bsize = 0
+        if self.demo_replay.size() > 0 and demo_ratio > 0.0:
+            demo_bsize = int(round(self.cfg.batch_size * demo_ratio))
+            demo_bsize = min(max(demo_bsize, 1), self.cfg.batch_size)
+        online_bsize = self.cfg.batch_size - demo_bsize
+
+        if online_bsize <= 0:
+            batch = self.demo_replay.sample(self.cfg.batch_size, self.cfg.rl_device)
+            self._inflate_batch(batch)
+            return batch
+
+        online_batch = self.replay.sample(online_bsize, self.cfg.rl_device)
+        self._inflate_batch(online_batch)
+        if demo_bsize == 0:
+            return online_batch
+
+        demo_batch = self.demo_replay.sample(demo_bsize, self.cfg.rl_device)
+        self._inflate_batch(demo_batch)
+        return self._merge_batches(online_batch, demo_batch)
+
+    def _sample_demo_batch(self) -> Optional[_GpuBatch]:
+        if not self.cfg.add_bc_loss or self.demo_replay.size() <= 0:
+            return None
+        batch = self.demo_replay.sample(self.cfg.batch_size, self.cfg.rl_device)
+        self._inflate_batch(batch)
+        return batch
+
+    def _append_pending_transition(
+        self,
+        pending_episode: Dict[str, object],
+        obs: Dict[str, torch.Tensor],
+        next_obs: Dict[str, torch.Tensor],
+        action: torch.Tensor,
+        reward: torch.Tensor,
+        done: torch.Tensor,
+        success: torch.Tensor,
+    ) -> None:
+        obs_store = pending_episode["obs"]
+        next_obs_store = pending_episode["next_obs"]
+        assert isinstance(obs_store, dict)
+        assert isinstance(next_obs_store, dict)
+        for k, v in obs.items():
+            obs_store[k].append(v.detach().clone())
+            next_obs_store[k].append(next_obs[k].detach().clone())
+
+        cast_list = pending_episode["action"]
+        assert isinstance(cast_list, list)
+        cast_list.append(action.detach().clone())
+        reward_list = pending_episode["reward"]
+        assert isinstance(reward_list, list)
+        reward_list.append(reward.detach().clone())
+        done_list = pending_episode["done"]
+        assert isinstance(done_list, list)
+        done_list.append(done.detach().clone())
+        success_list = pending_episode["success"]
+        assert isinstance(success_list, list)
+        success_list.append(success.detach().clone())
+
+    def _flush_pending_demo_episode(self, pending_episode: Dict[str, object], *, keep: bool) -> None:
+        obs_store = pending_episode["obs"]
+        next_obs_store = pending_episode["next_obs"]
+        action_store = pending_episode["action"]
+        reward_store = pending_episode["reward"]
+        done_store = pending_episode["done"]
+        success_store = pending_episode["success"]
+        assert isinstance(obs_store, dict)
+        assert isinstance(next_obs_store, dict)
+        assert isinstance(action_store, list)
+        assert isinstance(reward_store, list)
+        assert isinstance(done_store, list)
+        assert isinstance(success_store, list)
+
+        if keep and action_store:
+            obs_batch = {k: torch.stack(v, dim=0) for k, v in obs_store.items()}
+            next_obs_batch = {k: torch.stack(v, dim=0) for k, v in next_obs_store.items()}
+            action_batch = torch.stack(action_store, dim=0)
+            reward_batch = torch.stack(reward_store, dim=0)
+            done_batch = torch.stack(done_store, dim=0)
+            success_batch = torch.stack(success_store, dim=0)
+            self.demo_replay.add_step(
+                obs_batch,
+                next_obs_batch,
+                action_batch,
+                reward_batch,
+                done_batch,
+                success_batch,
+            )
+
+        pending_episode["obs"] = {self.cfg.rl_camera: [], "prop": [], "state": []}
+        pending_episode["next_obs"] = {self.cfg.rl_camera: [], "prop": [], "state": []}
+        pending_episode["action"] = []
+        pending_episode["reward"] = []
+        pending_episode["done"] = []
+        pending_episode["success"] = []
+
     def warm_up(self) -> Dict[str, torch.Tensor]:
         obs = self.train_env.reset()
+        pending_demo_episodes: List[Dict[str, object]] = []
+        for _ in range(self.cfg.num_train_envs):
+            pending_demo_episodes.append(
+                {
+                    "obs": {self.cfg.rl_camera: [], "prop": [], "state": []},
+                    "next_obs": {self.cfg.rl_camera: [], "prop": [], "state": []},
+                    "action": [],
+                    "reward": [],
+                    "done": [],
+                    "success": [],
+                }
+            )
         warmup_bar = tqdm(
             total=max(self.cfg.num_warm_up_episode * self.cfg.episode_length, 1),
             desc="Warmup",
@@ -354,20 +484,46 @@ class Workspace:
                 train_actions = self.bc_policy.act(train_obs, cpu=False)
             full_actions = self._compose_full_action(train_actions=train_actions)
             next_obs, rewards, dones, successes = self.train_env.step(full_actions)
+            packed_obs = self._pack_replay_obs(train_obs)
+            packed_next_obs = self._pack_replay_obs(self._slice_obs(next_obs, self.train_idx))
+            train_rewards = rewards.index_select(0, self.train_idx)
+            train_dones = dones.index_select(0, self.train_idx)
+            train_successes = successes.index_select(0, self.train_idx)
             self.replay.add_step(
-                self._pack_replay_obs(train_obs),
-                self._pack_replay_obs(self._slice_obs(next_obs, self.train_idx)),
+                packed_obs,
+                packed_next_obs,
                 train_actions,
-                rewards.index_select(0, self.train_idx),
-                dones.index_select(0, self.train_idx),
-                successes.index_select(0, self.train_idx),
+                train_rewards,
+                train_dones,
+                train_successes,
             )
+            for env_id in range(self.cfg.num_train_envs):
+                per_obs = {k: v[env_id] for k, v in packed_obs.items()}
+                per_next_obs = {k: v[env_id] for k, v in packed_next_obs.items()}
+                self._append_pending_transition(
+                    pending_demo_episodes[env_id],
+                    per_obs,
+                    per_next_obs,
+                    train_actions[env_id],
+                    train_rewards[env_id],
+                    train_dones[env_id],
+                    train_successes[env_id],
+                )
+                if bool(train_dones[env_id].item()):
+                    self._flush_pending_demo_episode(
+                        pending_demo_episodes[env_id],
+                        keep=bool(train_successes[env_id].item()),
+                    )
             obs = next_obs
             warmup_bar.update(self.cfg.num_train_envs)
             warmup_bar.set_postfix(episodes=f"{self.replay.num_episode}/{self.cfg.num_warm_up_episode}")
 
         warmup_bar.close()
-        print(f"Warm up done. #episodes: {self.replay.size()}")
+        print(
+            f"Warm up done. online replay: {self.replay.size()}, "
+            f"demo replay: {self.demo_replay.size()}, "
+            f"demo successes: {self.demo_replay.num_success}"
+        )
         return obs
 
     def eval(self) -> Dict[str, object]:
@@ -448,19 +604,20 @@ class Workspace:
     def rl_train(self, stat: common_utils.MultiCounter) -> None:
         stddev = utils.schedule(self.cfg.stddev_schedule, self.global_step)
         for idx in range(self.cfg.num_critic_update):
-            batch = self.replay.sample(self.cfg.batch_size, self.cfg.rl_device)
-            self._inflate_batch(batch)
+            batch = self._sample_train_batch()
             update_actor = idx == self.cfg.num_critic_update - 1
             bc_batch = None
             ref_agent = None
-            if update_actor and self.cfg.add_bc_loss:
-                bc_batch = self.replay.sample(self.cfg.batch_size, self.cfg.rl_device)
-                self._inflate_batch(bc_batch)
+            if update_actor:
+                bc_batch = self._sample_demo_batch()
+            if update_actor and bc_batch is not None and self.cfg.add_bc_loss:
                 ref_agent = self.ref_agent
                 assert ref_agent is not None
             metrics = self.agent.update(batch, stddev, update_actor, bc_batch, ref_agent)
             stat.append(metrics)
             stat["data/discount"].append(batch.bootstrap.mean().item())
+            if self.demo_replay.size() > 0:
+                stat["data/demo_frac"].append(float(min(max(self.cfg.demo_batch_ratio, 0.0), 1.0)))
 
     def log_and_save(
         self,
@@ -475,7 +632,9 @@ class Workspace:
         stat["other/step"].append(self.global_step)
         stat["other/train_step"].append(self.train_step)
         stat["other/replay"].append(self.replay.size())
+        stat["other/demo_replay"].append(self.demo_replay.size())
         stat["score/num_success"].append(self.replay.num_success)
+        stat["score/demo_num_success"].append(self.demo_replay.num_success)
 
         saver.save(self.agent.state_dict(), None, save_latest=True)
 
