@@ -310,19 +310,16 @@ class QAgent(nn.Module):
         if self.stats is not None:
             use_bc = (selected_action_idx >= 1).float()
             if use_target:
-                use_bc = use_bc.mean().item()
-                self.stats["actor/bootstrap_bc"].append(use_bc)
+                self.stats["actor/bootstrap_bc"].append(use_bc.sum().item(), bsize)
             else:
-                use_bc = use_bc.sum().item()
                 if eval_mode:
-                    self.stats["actor/bc_eval"].append(use_bc, bsize)
+                    self.stats["actor/bc_eval"].append(use_bc.sum().item(), bsize)
                 else:
-                    assert bsize == 1, f"bsize should be 1, but got {bsize}"
-                    rl_action_norm = rl_action.squeeze()[:6].norm().item()
-                    bc_action_norm = bc_action.squeeze()[:6].norm().item()
+                    rl_action_norm = rl_action[:, :6].norm(dim=1).mean().item()
+                    bc_action_norm = bc_action[:, :6].norm(dim=1).mean().item()
                     self.stats["actor/anorm_rl"].append(rl_action_norm)
                     self.stats["actor/anorm_bc"].append(bc_action_norm)
-                    self.stats["actor/bc_train"].append(use_bc, bsize)
+                    self.stats["actor/bc_train"].append(use_bc.sum().item(), bsize)
 
         return action
 

@@ -54,6 +54,7 @@ class MainConfig(common_utils.RunConfig):
     isaac_camera: str = "wrist"
     external_camera: str = "client"
     env_reward_scale: float = 1.0
+    reward_mode: str = "dense"
     sim_device: str = "cuda:0"
     rl_device: str = "cuda:0"
     graphics_device_id: int = 0
@@ -270,6 +271,7 @@ class Workspace:
             seed=self.cfg.seed + seed_offset,
             n_obs_steps=self.n_obs_steps,
             env_reward_scale=self.cfg.env_reward_scale,
+            reward_mode=self.cfg.reward_mode,
             rl_camera=self.cfg.rl_camera,
             isaac_camera=self.cfg.isaac_camera,
             image_hw=(self.cfg.image_size, self.cfg.image_size),

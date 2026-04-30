@@ -44,6 +44,7 @@ class ManiFeelBulbVecEnv:
         n_obs_steps: int,
         max_episode_length: int,
         env_reward_scale: float = 1.0,
+        reward_mode: str = "dense",
         rl_camera: str = "wrist",
         isaac_camera: str = "wrist",
         image_hw: Tuple[int, int] = (256, 256),
@@ -57,6 +58,7 @@ class ManiFeelBulbVecEnv:
         self.num_envs = int(num_envs)
         self.device = torch.device(rl_device)
         self.env_reward_scale = float(env_reward_scale)
+        self.reward_mode = str(reward_mode)
         self.rl_camera = str(rl_camera)
         self.isaac_camera = str(isaac_camera)
         self.image_hw = (int(image_hw[0]), int(image_hw[1]))
@@ -218,23 +220,25 @@ class ManiFeelBulbVecEnv:
 
         obs_out, reward, reset, info = self.envs.step(action_tensor)
         obs = obs_out["obs"]
-        rewards = reward.detach().clone().to(self.device).float() * self.env_reward_scale
         dones = reset.detach().clone().to(self.device).bool()
         successes = self.envs._check_success().detach().clone().to(self.device).bool()
+        if self.reward_mode == "sparse":
+            rewards = successes.float() * self.env_reward_scale
+        else:
+            rewards = reward.detach().clone().to(self.device).float() * self.env_reward_scale
 
         self._episode_reward += rewards
         self._episode_step += 1
 
         done_ids = dones.nonzero(as_tuple=False).squeeze(-1)
         if done_ids.numel() > 0:
-            # TacSL bulb appears to have a broken subset-reset path. To keep
-            # training stable, reset the full vector env whenever any env ends.
-            self._last_done_steps = self._episode_step.clone()
-            self._last_done_rewards = self._episode_reward.clone()
-            self._last_done_successes = successes.clone()
-            obs = self._raw_reset()
-            dones = torch.ones_like(dones, device=self.device, dtype=torch.bool)
-            done_ids = torch.arange(self.num_envs, device=self.device)
+            self._last_done_steps = self._episode_step[done_ids].clone()
+            self._last_done_rewards = self._episode_reward[done_ids].clone()
+            self._last_done_successes = successes[done_ids].clone()
+            self.envs.reset_idx(done_ids)
+            self.envs.compute_observations()
+            reset_obs = self.envs.reset()
+            obs = reset_obs["obs"]
         else:
             self._last_done_steps = torch.zeros(0, dtype=torch.long, device=self.device)
             self._last_done_rewards = torch.zeros(0, dtype=torch.float32, device=self.device)
@@ -244,8 +248,8 @@ class ManiFeelBulbVecEnv:
         self._append_history(wrist, state, done_ids)
 
         if done_ids.numel() > 0:
-            self._episode_reward.zero_()
-            self._episode_step.zero_()
+            self._episode_reward[done_ids] = 0.0
+            self._episode_step[done_ids] = 0
 
         return self._format_obs(obs), rewards, dones, successes
 
