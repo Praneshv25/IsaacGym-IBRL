@@ -75,7 +75,7 @@ class ManiFeelBulbVecEnv:
             OmegaConf.register_new_resolver("eval", eval)
 
         config_dir = os.path.join(self.manifeel_root, "manifeel", "config")
-        from isaacgymenvs.tasks.tacsl.tacsl_task_bulb import TacSLTaskBulb
+        from isaacgymenvs.tasks.tacsl.tacsl_task_bulb_ibrl import TacSLTaskBulbIBRL
         from isaacgymenvs.utils.reformat import omegaconf_to_dict
         from isaacgymenvs.utils.utils import set_seed
 
@@ -104,7 +104,7 @@ class ManiFeelBulbVecEnv:
 
             self._cfg = cfg
             cfg_dict = omegaconf_to_dict(cfg.task)
-            self.envs = TacSLTaskBulb(
+            self.envs = TacSLTaskBulbIBRL(
                 cfg=cfg_dict,
                 rl_device=cfg.rl_device,
                 sim_device=cfg.sim_device,
