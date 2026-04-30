@@ -281,6 +281,7 @@ class Workspace:
             reward_mode=self.cfg.reward_mode,
             rl_camera=self.cfg.rl_camera,
             isaac_camera=self.cfg.isaac_camera,
+            external_camera=self.cfg.external_camera,
             image_hw=(self.cfg.image_size, self.cfg.image_size),
             max_episode_length=self.cfg.episode_length,
             force_render=bool(force_render),
@@ -307,7 +308,8 @@ class Workspace:
         return full
 
     def _obs_to_video_frame(self, obs: Dict[str, torch.Tensor], env_idx: int) -> np.ndarray:
-        frame = obs[self.cfg.rl_camera][env_idx].detach().float()
+        camera_key = self.cfg.external_camera if self.cfg.external_camera in obs else self.cfg.rl_camera
+        frame = obs[camera_key][env_idx].detach().float()
         if float(frame.max()) <= 1.01:
             frame = frame * 255.0
         frame = frame.clamp(0, 255).to(torch.uint8).permute(1, 2, 0).cpu().numpy()

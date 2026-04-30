@@ -126,6 +126,15 @@ class QAgent(nn.Module):
         else:
             assert False, f"Unknown encoder type {self.cfg.enc_type}."
 
+    def _replace_gripper_with_bc(
+        self, action: torch.Tensor, bc_action: torch.Tensor
+    ) -> torch.Tensor:
+        if action.size(-1) < 1 or bc_action.size(-1) < 1:
+            return action
+        action = action.clone()
+        action[..., -1] = bc_action[..., -1]
+        return action
+
     def add_bc_policy(self, bc_policy):
         bc_policy.train(False)
         self.bc_policies.append(bc_policy)
@@ -269,6 +278,7 @@ class QAgent(nn.Module):
             rl_action = rl_dist.mean
         else:
             rl_action = rl_dist.sample(clip)
+        rl_action = self._replace_gripper_with_bc(rl_action, bc_action)
 
         rl_bc_actions = torch.stack([rl_action, bc_action], dim=1)
         bsize, num_action, _ = rl_bc_actions.size()
@@ -478,6 +488,9 @@ class QAgent(nn.Module):
             clip=self.cfg.stddev_clip,
             use_target=False,
         )
+        if self.cfg.act_method == "ibrl" and self.bc_policies:
+            bc_action = self.bc_policies[0].act(obs, cpu=False)
+            action = self._replace_gripper_with_bc(action, bc_action)
 
         if isinstance(self.critic, Critic):
             q = torch.min(*self.critic.forward(obs["feat"], obs["prop"], action))

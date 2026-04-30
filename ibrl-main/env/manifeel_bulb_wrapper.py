@@ -47,6 +47,7 @@ class ManiFeelBulbVecEnv:
         reward_mode: str = "dense",
         rl_camera: str = "wrist",
         isaac_camera: str = "wrist",
+        external_camera: str = "client",
         image_hw: Tuple[int, int] = (256, 256),
         force_render: bool = False,
     ) -> None:
@@ -61,6 +62,7 @@ class ManiFeelBulbVecEnv:
         self.reward_mode = str(reward_mode)
         self.rl_camera = str(rl_camera)
         self.isaac_camera = str(isaac_camera)
+        self.external_camera = str(external_camera)
         self.image_hw = (int(image_hw[0]), int(image_hw[1]))
         self.n_obs_steps = int(n_obs_steps)
         self.max_episode_length = int(max_episode_length)
@@ -96,10 +98,10 @@ class ManiFeelBulbVecEnv:
 
             if self.isaac_camera in cfg.task.env.obsDims:
                 cfg.task.env.obsDims[self.isaac_camera] = [self.image_hw[0], self.image_hw[1], 3]
-            if "client" in cfg.task.env.obsDims:
-                cfg.task.env.obsDims["client"] = [self.image_hw[0], self.image_hw[1], 3]
+            if self.external_camera in cfg.task.env.obsDims:
+                cfg.task.env.obsDims[self.external_camera] = [self.image_hw[0], self.image_hw[1], 3]
             for camera_cfg in cfg.task.env.camera_configs:
-                if camera_cfg.name in {self.isaac_camera, "client"}:
+                if camera_cfg.name in {self.isaac_camera, self.external_camera}:
                     camera_cfg.image_size = [self.image_hw[0], self.image_hw[1]]
 
             self._cfg = cfg
@@ -132,27 +134,39 @@ class ManiFeelBulbVecEnv:
             rank=0,
         )
 
-    def _extract_current_obs(self, obs: Dict[str, "torch.Tensor"]) -> Tuple["torch.Tensor", "torch.Tensor"]:
+    def _extract_camera(self, obs: Dict[str, "torch.Tensor"], camera_name: str) -> Optional["torch.Tensor"]:
         global torch
 
-        wrist = obs[self.isaac_camera]
-        if wrist.dim() == 4 and wrist.shape[-1] == 3:
-            wrist = wrist.permute(0, 3, 1, 2)
-        wrist = wrist.detach().to(self.device).float()
-        if tuple(wrist.shape[-2:]) != self.image_hw:
-            wrist = F.interpolate(
-                wrist,
+        if camera_name not in obs:
+            return None
+        image = obs[camera_name]
+        if image.dim() == 4 and image.shape[-1] == 3:
+            image = image.permute(0, 3, 1, 2)
+        image = image.detach().to(self.device).float()
+        if tuple(image.shape[-2:]) != self.image_hw:
+            image = F.interpolate(
+                image,
                 size=self.image_hw,
                 mode="bilinear",
                 align_corners=False,
             )
-        if float(wrist.max()) <= 1.01:
-            wrist = wrist * 255.0
+        if float(image.max()) <= 1.01:
+            image = image * 255.0
+        return image
+
+    def _extract_current_obs(
+        self, obs: Dict[str, "torch.Tensor"]
+    ) -> Tuple["torch.Tensor", "torch.Tensor", Optional["torch.Tensor"]]:
+        wrist = self._extract_camera(obs, self.isaac_camera)
+        assert wrist is not None, f"missing camera {self.isaac_camera!r} in env obs"
+        external = None
+        if self.external_camera != self.isaac_camera:
+            external = self._extract_camera(obs, self.external_camera)
 
         ee_pos = obs["ee_pos"].detach().to(self.device).float()
         ee_quat = obs["ee_quat"].detach().to(self.device).float()
         state = torch.cat([ee_pos, ee_quat], dim=1)
-        return wrist, state
+        return wrist, state, external
 
     def _set_history(self, wrist: "torch.Tensor", state: "torch.Tensor", env_ids: Optional["torch.Tensor"] = None) -> None:
         wrist_hist = wrist.unsqueeze(1).repeat(1, self.n_obs_steps, 1, 1, 1).contiguous()
@@ -180,16 +194,19 @@ class ManiFeelBulbVecEnv:
             self._set_history(wrist, state, done_ids)
 
     def _format_obs(self, obs: Dict[str, "torch.Tensor"]) -> Dict[str, "torch.Tensor"]:
-        wrist, state = self._extract_current_obs(obs)
+        wrist, state, external = self._extract_current_obs(obs)
         assert self._bc_wrist_hist is not None
         assert self._bc_state_hist is not None
-        return {
+        formatted = {
             self.rl_camera: wrist,
             "prop": state,
             "state": state,
             "bc_wrist": self._bc_wrist_hist,
             "bc_state": self._bc_state_hist,
         }
+        if external is not None:
+            formatted[self.external_camera] = external
+        return formatted
 
     def _raw_reset(self) -> Dict[str, "torch.Tensor"]:
         import torch
@@ -204,7 +221,7 @@ class ManiFeelBulbVecEnv:
         self._episode_reward.zero_()
         self._episode_step.zero_()
         obs = self._raw_reset()
-        wrist, state = self._extract_current_obs(obs)
+        wrist, state, _ = self._extract_current_obs(obs)
         self._set_history(wrist, state)
         return self._format_obs(obs)
 
@@ -244,7 +261,7 @@ class ManiFeelBulbVecEnv:
             self._last_done_rewards = torch.zeros(0, dtype=torch.float32, device=self.device)
             self._last_done_successes = torch.zeros(0, dtype=torch.bool, device=self.device)
 
-        wrist, state = self._extract_current_obs(obs)
+        wrist, state, _ = self._extract_current_obs(obs)
         self._append_history(wrist, state, done_ids)
 
         if done_ids.numel() > 0:

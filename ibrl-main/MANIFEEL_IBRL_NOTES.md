@@ -108,6 +108,17 @@ That meant:
 
 This motivated the later demo-buffer changes.
 
+### 10. The gripper was a major instability source
+
+Videos showed a common failure pattern:
+
+- the hybrid policy would flicker or perturb the gripper
+- the bulb would get dropped
+- the resulting state went out of the good BC distribution
+- behavior then became erratic
+
+This suggested that letting RL directly control the gripper too early was a bad idea.
+
 ## Current Architecture
 
 ### Unified single-stack train/eval design
@@ -165,6 +176,7 @@ Replay / data changes:
 - each update now uses a fixed mixed batch:
   - online replay samples
   - plus demo replay samples according to `demo_batch_ratio`
+- eval video now prefers the external/front-style camera key instead of always logging wrist view
 
 Actor-update changes:
 
@@ -192,6 +204,7 @@ Main wrapper changes:
   - `prop`
   - `state`
   - BC history tensors
+- can also carry an external debug camera such as `client` / `front`
 - enforces the configured image size
 - supports:
   - `reward_mode="dense"`
@@ -209,6 +222,10 @@ Main changes:
 - made the active `ibrl` path batch-safe for train acting
 - removed the old train-time `bsize == 1` assumption from `_act_ibrl()`
 - train/eval/bootstrap BC-selection stats now work with batched envs
+- gripper stabilization change:
+  - in the active `ibrl` path, the final gripper command now always comes from BC
+  - the RL branch effectively controls only the first 6 action dims
+  - actor loss is trained consistently with the same BC-gripper substitution
 
 This is what enabled moving `num_train_envs` from 1 to 8 for the active `ibrl` path.
 
@@ -297,6 +314,20 @@ Why:
 
 This was added specifically because the sparse-reward run showed the critic was learning from almost entirely zero-reward online data.
 
+## Gripper Constraint
+
+The current hybrid policy uses a simple stabilization rule:
+
+- BC controls the gripper dimension
+- RL controls only the first 6 arm-control dimensions
+
+Why:
+
+- the gripper was the easiest way for early RL to destroy otherwise good BC behavior
+- once the bulb was dropped, the policy quickly entered bad out-of-distribution states
+
+This is a practical safety constraint to keep the hybrid policy closer to the strong BC baseline.
+
 ## Evaluation Behavior
 
 Evaluation currently:
@@ -306,6 +337,8 @@ Evaluation currently:
 - logs `test/mean_score`
 - records wrist-camera video
 - can run up to 50 eval envs in parallel
+
+For easier debugging, eval video now prefers the configured external camera key, e.g. `client` or `front`, and falls back to `wrist` if needed.
 
 This is no longer ManiFeel's original `env_runner.run(policy)` path. It is trainer-local eval built on the unified env stack.
 
